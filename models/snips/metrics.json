@@ -1,0 +1,156 @@
+{
+  "dataset": "SNIPS 2017 custom intents",
+  "source_repository": "snipsco/nlu-benchmark",
+  "source_revision": "b86ac7f1577868c42158d0dec77db50956046696",
+  "citation": "Coucke A. et al. (2018), Snips Voice Platform: an embedded Spoken Language Understanding system for private-by-design voice interfaces. https://arxiv.org/abs/1805.10190",
+  "training": "Central training on public data; no DP/FL claim",
+  "train_samples": 13773,
+  "validation_samples": 700,
+  "exact_train_validation_overlaps_removed": 11,
+  "features": 8192,
+  "labels": [
+    "AddToPlaylist",
+    "BookRestaurant",
+    "GetWeather",
+    "PlayMusic",
+    "RateBook",
+    "SearchCreativeWork",
+    "SearchScreeningEvent"
+  ],
+  "model": "Hashed unigram/bigram multinomial logistic regression; C=8; seed=42",
+  "validation_accuracy": 0.9785714285714285,
+  "validation_macro_f1": 0.9784715718233528,
+  "onnx_prediction_parity": true,
+  "onnx_bytes": 229815,
+  "onnx_sha256": "19cd48550ae49def548feed0f1bcae42aab6782f570bb62daccbe122ce4ab8fa",
+  "train_and_export_seconds": 0.577,
+  "classification_report": {
+    "AddToPlaylist": {
+      "precision": 0.970873786407767,
+      "recall": 1.0,
+      "f1-score": 0.9852216748768473,
+      "support": 100.0
+    },
+    "BookRestaurant": {
+      "precision": 0.9900990099009901,
+      "recall": 1.0,
+      "f1-score": 0.9950248756218906,
+      "support": 100.0
+    },
+    "GetWeather": {
+      "precision": 0.9896907216494846,
+      "recall": 0.96,
+      "f1-score": 0.9746192893401016,
+      "support": 100.0
+    },
+    "PlayMusic": {
+      "precision": 0.9897959183673469,
+      "recall": 0.97,
+      "f1-score": 0.9797979797979798,
+      "support": 100.0
+    },
+    "RateBook": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 100.0
+    },
+    "SearchCreativeWork": {
+      "precision": 0.9345794392523364,
+      "recall": 1.0,
+      "f1-score": 0.966183574879227,
+      "support": 100.0
+    },
+    "SearchScreeningEvent": {
+      "precision": 0.9787234042553191,
+      "recall": 0.92,
+      "f1-score": 0.9484536082474226,
+      "support": 100.0
+    },
+    "accuracy": 0.9785714285714285,
+    "macro avg": {
+      "precision": 0.9791088971190349,
+      "recall": 0.9785714285714285,
+      "f1-score": 0.9784715718233528,
+      "support": 700.0
+    },
+    "weighted avg": {
+      "precision": 0.9791088971190348,
+      "recall": 0.9785714285714285,
+      "f1-score": 0.9784715718233528,
+      "support": 700.0
+    }
+  },
+  "source_files": [
+    {
+      "path": "2017-06-custom-intent-engines/AddToPlaylist/train_AddToPlaylist_full.json",
+      "sha256": "fee1b4645352e70ed8a40f1f87c3b53fc3bf75f8ebc82252a22b82c107e75b01",
+      "count": 1942
+    },
+    {
+      "path": "2017-06-custom-intent-engines/AddToPlaylist/validate_AddToPlaylist.json",
+      "sha256": "14cc9ee49ae477b1452632a6e835498cf4c32da397b16967c82abb3e50403e83",
+      "count": 100
+    },
+    {
+      "path": "2017-06-custom-intent-engines/BookRestaurant/train_BookRestaurant_full.json",
+      "sha256": "7677e82cd6e9a8191f0a4502568c786278c984900b4796d3628e46f1abf73ef4",
+      "count": 1973
+    },
+    {
+      "path": "2017-06-custom-intent-engines/BookRestaurant/validate_BookRestaurant.json",
+      "sha256": "4f7258ccc768b777b2eb8916532db9aa50dbd058ddf1ffb0dc59218963e7442a",
+      "count": 100
+    },
+    {
+      "path": "2017-06-custom-intent-engines/GetWeather/train_GetWeather_full.json",
+      "sha256": "86f414b2ad8a993134d85d16e25e5d337beae47cef993c0af2a5f440405c60f6",
+      "count": 2000
+    },
+    {
+      "path": "2017-06-custom-intent-engines/GetWeather/validate_GetWeather.json",
+      "sha256": "60c095e193655d6ca92be220fed3926ca25e18cd70c85664145efe25d80993af",
+      "count": 100
+    },
+    {
+      "path": "2017-06-custom-intent-engines/PlayMusic/train_PlayMusic_full.json",
+      "sha256": "cd1d0f257719e068c097c9015073924f8d830d030d5cd11f85ffce014422857a",
+      "count": 2000
+    },
+    {
+      "path": "2017-06-custom-intent-engines/PlayMusic/validate_PlayMusic.json",
+      "sha256": "922212775e26259d5bffeaf79b6048d070ca017d229df00b2cc9800f71c75d20",
+      "count": 100
+    },
+    {
+      "path": "2017-06-custom-intent-engines/RateBook/train_RateBook_full.json",
+      "sha256": "bb43e4b74134300d5766f6b420d0357a63402987a225f6dc92c806c9c040ce04",
+      "count": 1956
+    },
+    {
+      "path": "2017-06-custom-intent-engines/RateBook/validate_RateBook.json",
+      "sha256": "c1f8b4114da0bb5e8afd78a8062766e18b2eabb0e717539598db01b09d04619b",
+      "count": 100
+    },
+    {
+      "path": "2017-06-custom-intent-engines/SearchCreativeWork/train_SearchCreativeWork_full.json",
+      "sha256": "87b3432de48c71c205aa5238b41d9e3f2d70bdfcd0bea2427544fb9e4bd5e5bb",
+      "count": 1954
+    },
+    {
+      "path": "2017-06-custom-intent-engines/SearchCreativeWork/validate_SearchCreativeWork.json",
+      "sha256": "8a5e830eddb185d3e4a9d27ded140a145d04766bdce0e58834676ede32d13e77",
+      "count": 100
+    },
+    {
+      "path": "2017-06-custom-intent-engines/SearchScreeningEvent/train_SearchScreeningEvent_full.json",
+      "sha256": "5447e9440c02e2fb08c3ae16b9f58a4d1332b4bc77fd34691402b02aa4399765",
+      "count": 1959
+    },
+    {
+      "path": "2017-06-custom-intent-engines/SearchScreeningEvent/validate_SearchScreeningEvent.json",
+      "sha256": "81e1445713e03c7c3e615353c5f3fee05f369fe9834100b9b9735900a96b9498",
+      "count": 100
+    }
+  ]
+}

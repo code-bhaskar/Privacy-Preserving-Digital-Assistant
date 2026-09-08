@@ -1,0 +1,8 @@
+# Optional CPU-only neural summarisation dependencies (large download).
+# Install after requirements.txt. No model weights are bundled in Git.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0+cpu
+transformers==4.55.4
+sentencepiece==0.2.1
+safetensors==0.6.2
+huggingface-hub==0.34.4
