@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.angular/
+.env
+*.db
+__pycache__/
+.venv/
+.runtime/
+.pytest_cache/
+*.db-wal
+*.db-shm
+.ruff_cache/
+
+# Only the small public SNIPS ONNX artifact and metrics are bundled.
+/models/snips/data/
+/models/snips/*.tmp

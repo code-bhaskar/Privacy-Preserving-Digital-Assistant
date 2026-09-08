@@ -1,0 +1,1106 @@
+<div class="app" [class.reduced]="reduced">
+  @if (!entered) {
+    <div class="entry">
+      <div class="entry-top">
+        <a class="brand" href="/" aria-label="PPDA home"
+          ><img src="brand/mark.svg" alt="" />ppda<span class="brand-dot"
+            >.</span
+          ></a
+        ><button
+          class="icon-button"
+          (click)="toggleTheme()"
+          aria-label="Toggle light and dark theme"
+        >
+          <app-icon name="sun" />
+        </button>
+      </div>
+      <div class="entry-grid">
+        <section class="entry-story">
+          <div class="eyebrow">
+            <span class="dot"></span> YOUR SPACE. YOUR ASSISTANT.
+          </div>
+          <h1>A little help.<br />A lot of <em>privacy.</em></h1>
+          <p>
+            A calmer place for your plans, thoughts, and everyday things. Meet
+            the assistant designed to keep you in control.
+          </p>
+          <div class="entry-robot">
+            <img
+              src="brand/robots/default_mode_robot_blue.webp"
+              alt="Friendly silver PPDA robot with glowing cyan eyes"
+            /><span class="orbit-label"
+              ><app-icon name="shield" /> Thoughtfully private</span
+            >
+          </div>
+        </section>
+        <section class="entry-card">
+          <div class="mini-mark">
+            <img src="brand/mark.svg" alt="PPDA robot mark" />
+          </div>
+          <h2>
+            {{
+              authMode === "login" ? "Welcome back" : "Make yourself at home"
+            }}
+          </h2>
+          <p>Your day, with a little more clarity.</p>
+          <div class="preview-label">ENCRYPTED WORKSPACE · LOCAL-FIRST</div>
+          @if (checking) {
+            <p role="status">Checking your session…</p>
+          }
+          <form (ngSubmit)="authenticate()">
+            @if (authMode === "register") {
+              <label for="name">What should we call you?</label>
+              <input
+                id="name"
+                name="name"
+                [(ngModel)]="name"
+                maxlength="40"
+                required
+                autocomplete="given-name"
+                placeholder="Your first name"
+              />
+            }
+            <label for="email">Email address</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              [(ngModel)]="email"
+              required
+              autocomplete="username"
+              placeholder="you@example.com"
+            />
+            <label for="password">Password</label>
+            <div class="password-field">
+              <input
+                id="password"
+                name="password"
+                [type]="showPassword ? 'text' : 'password'"
+                [(ngModel)]="password"
+                required
+                [attr.autocomplete]="
+                  authMode === 'register' ? 'new-password' : 'current-password'
+                "
+                placeholder="Your password"
+              /><button
+                type="button"
+                (click)="showPassword = !showPassword"
+                [attr.aria-label]="
+                  showPassword ? 'Hide password' : 'Show password'
+                "
+              >
+                {{ showPassword ? "Hide" : "Show" }}
+              </button>
+            </div>
+            @if (authMode === "register") {
+              <p class="muted">
+                At least 12 characters; maximum 72 UTF-8 bytes. No silent
+                truncation.
+              </p>
+              <label class="consent-check"
+                ><input
+                  type="checkbox"
+                  name="localConsent"
+                  [(ngModel)]="localConsent"
+                /><span
+                  >I allow local-backend assistant processing and encrypted
+                  calendar, reminder, note, and summary operations. I can change
+                  each permission in Settings.</span
+                ></label
+              >
+            }
+            @if (authError) {
+              <p class="error" role="alert">{{ authError }}</p>
+            }
+            <button
+              type="submit"
+              class="primary full"
+              [disabled]="authBusy || checking"
+            >
+              {{
+                authBusy
+                  ? "Please wait…"
+                  : authMode === "login"
+                    ? "Sign in"
+                    : "Create account"
+              }}
+              <span>→</span>
+            </button>
+          </form>
+          <button
+            class="auth-switch"
+            (click)="
+              authMode = authMode === 'login' ? 'register' : 'login';
+              authError = ''
+            "
+          >
+            {{
+              authMode === "login"
+                ? "New here? Create an account"
+                : "Already have an account? Sign in"
+            }}
+          </button>
+          <div class="entry-notice">
+            <app-icon name="shield" />
+            <p>
+              Passwords are hashed. Workspace text is encrypted at rest.
+              Processing runs on the backend host—not in your browser. Cloud
+              access and training are off until you opt in.
+            </p>
+          </div>
+          <div class="entry-footer">Less noise. More room to think.</div>
+        </section>
+      </div>
+      <footer class="landing-footer">
+        <span>PPDA · Your personal space, reimagined.</span
+        ><span>Built around you, not your data.</span>
+      </footer>
+    </div>
+  } @else {
+    <aside class="sidebar">
+      <a href="/" class="brand" aria-label="PPDA home"
+        ><img src="brand/mark.svg" alt="" />ppda<span class="brand-dot"
+          >.</span
+        ></a
+      >
+      <div class="workspace-label">YOUR WORKSPACE</div>
+      <nav aria-label="Main navigation">
+        @for (n of nav; track n) {
+          <button
+            [class.active]="tab === n"
+            [attr.aria-label]="n"
+            [attr.title]="n"
+            (click)="go(n)"
+          >
+            <app-icon [name]="n.toLowerCase()" /><span>{{ n }}</span>
+            @if (tab === n) {
+              <span class="nav-dot"></span>
+            }
+          </button>
+        }
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="privacy-card">
+          <div class="privacy-card-icon"><app-icon name="shield" /></div>
+          <strong>A space you control</strong>
+          <p>Privacy isn’t an extra.<br />It’s where we start.</p>
+          <button (click)="go('Settings')">
+            Your privacy settings <span>↗</span>
+          </button>
+        </div>
+        <nav aria-label="Account navigation">
+          @for (n of secondary; track n) {
+            <button
+              [class.active]="tab === n"
+              [attr.aria-label]="n"
+              [attr.title]="n"
+              (click)="go(n)"
+            >
+              <app-icon [name]="n.toLowerCase()" /><span>{{ n }}</span>
+            </button>
+          }
+        </nav>
+        <button class="user-button" (click)="go('Profile')">
+          <span class="avatar">{{ name.slice(0, 1).toUpperCase() || "A" }}</span
+          ><span
+            ><strong>{{ name || "Alex" }}</strong
+            ><small>Personal workspace</small></span
+          ><span class="user-dots">···</span>
+        </button>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div class="mode-wrap">
+          <button
+            class="mode-button"
+            (click)="modeOpen = !modeOpen"
+            [attr.aria-expanded]="modeOpen"
+            aria-label="Select assistant mode"
+          >
+            <img
+              class="mode-robot-icon"
+              [src]="modeRobot(mode)"
+              alt=""
+            /><strong>{{ mode }} mode</strong><span class="chevron">⌄</span>
+          </button>
+          @if (modeOpen) {
+            <div class="mode-menu">
+              @for (m of ["Default", "Privacy", "Global"]; track m) {
+                <button (click)="selectMode(m)">
+                  <img class="mode-option-robot" [src]="modeRobot(m)" alt="" />
+                  <strong
+                    >{{ m }} mode
+                    @if (mode === m) {
+                      <span>✓</span>
+                    }</strong
+                  ><small>{{
+                    m === "Default"
+                      ? "Local-first, consent-aware routing"
+                      : m === "Privacy"
+                        ? "Local processing only"
+                        : "External LLM · requires consent"
+                  }}</small>
+                </button>
+              }
+            </div>
+          }
+        </div>
+        <span class="top-description">{{
+          mode === "Privacy"
+            ? "Your words stay in your trusted space."
+            : mode === "Global"
+              ? "Cloud processing, only with your permission."
+              : "The right help, with you in control."
+        }}</span>
+        <div class="top-right">
+          <span class="preview-badge"><span class="dot"></span> Connected</span
+          ><span class="divider"></span
+          ><button
+            class="icon-button"
+            (click)="toggleTheme()"
+            [attr.aria-label]="
+              dark ? 'Switch to light theme' : 'Switch to dark theme'
+            "
+          >
+            <app-icon name="sun" />
+          </button>
+        </div>
+      </header>
+      <main>
+        @if (tab === "Assistant") {
+          <div class="assistant-page">
+            <div class="dayline">
+              <span>{{ dateLabel }}</span
+              ><span class="subtle-tag">A fresh space for your day</span>
+            </div>
+            @if (messages.length === 0) {
+              <section class="welcome">
+                <div class="robot-welcome">
+                  <app-robot
+                    [mode]="mode"
+                    [intent]="robotIntent"
+                    [phase]="robotPhase"
+                    [reduced]="reduced"
+                    label="Hello, human."
+                  />
+                </div>
+                <div class="eyebrow">
+                  A LITTLE ASSISTANCE. A LITTLE MORE EASE.
+                </div>
+                <h1>What’s on your mind, {{ name || "Alex" }}?</h1>
+                <p>
+                  Make a plan, save a thought, or simplify your day.<br />We’ll
+                  take it one thing at a time.
+                </p>
+              </section>
+              <div class="suggestions">
+                <button (click)="prompt('What’s on my calendar today?')">
+                  <img
+                    class="suggestion-robot"
+                    [src]="robotFrames.calendar[3]"
+                    alt=""
+                    loading="lazy"
+                  />
+                  <span class="tile-icon lavender"
+                    ><app-icon name="calendar" /></span
+                  ><strong>Make room for your day</strong>
+                  <p>See your schedule or plan something new.</p>
+                  <span class="tile-action"
+                    >Let’s plan <span>↗</span></span
+                  ></button
+                ><button (click)="prompt('Remind me to take a break at 3 PM')">
+                  <img
+                    class="suggestion-robot"
+                    [src]="robotFrames.reminder[2]"
+                    alt=""
+                    loading="lazy"
+                  />
+                  <span class="tile-icon peach"
+                    ><app-icon name="reminders" /></span
+                  ><strong>Keep the little things</strong>
+                  <p>A gentle nudge, right when you need it.</p>
+                  <span class="tile-action"
+                    >Set a reminder <span>↗</span></span
+                  ></button
+                ><button
+                  (click)="prompt('Summarize this into the key points: ')"
+                >
+                  <img
+                    class="suggestion-robot"
+                    [src]="robotFrames.summarizer[3]"
+                    alt=""
+                    loading="lazy"
+                  />
+                  <span class="tile-icon mint"><app-icon name="notes" /></span
+                  ><strong>Find the useful bits</strong>
+                  <p>Turn a lot of information into a little clarity.</p>
+                  <span class="tile-action"
+                    >Make it simpler <span>↗</span></span
+                  >
+                </button>
+              </div>
+            } @else {
+              <div class="assistant-activity" [attr.data-status]="robotPhase">
+                <app-robot
+                  [mode]="mode"
+                  [intent]="robotIntent"
+                  [phase]="robotPhase"
+                  [reduced]="reduced"
+                  size="compact"
+                />
+                <div>
+                  <span class="eyebrow"
+                    >ONE ASSISTANT. A FEW LITTLE SUPERPOWERS.</span
+                  >
+                  <p role="status">{{ robotState }}</p>
+                  <small
+                    >{{
+                      robotIntent === "calendar"
+                        ? "Clock mode"
+                        : robotIntent === "reminder"
+                          ? "Notepad mode"
+                          : robotIntent === "summarizer"
+                            ? "Thinking mode"
+                            : mode + " mode"
+                    }}
+                    ·
+                    {{
+                      robotPhase === "review"
+                        ? "No changes until you confirm"
+                        : robotPhase === "error"
+                          ? "Review the message below"
+                          : "Your words, your control"
+                    }}</small
+                  >
+                </div>
+              </div>
+              <section class="conversation" aria-live="polite">
+                <button
+                  class="text-button"
+                  (click)="newConversation()"
+                  [disabled]="busy"
+                >
+                  ← New conversation
+                </button>
+                @for (message of messages; track $index) {
+                  <div
+                    class="message"
+                    [class.from-user]="message.role === 'user'"
+                  >
+                    @if (message.role === "assistant") {
+                      <img
+                        class="message-robot"
+                        [src]="messageRobot(message)"
+                        alt="PPDA assistant"
+                      />
+                    }
+                    <div>
+                      <small>{{
+                        message.role === "user"
+                          ? "YOU"
+                          : "PPDA · " + (message.location || "local backend")
+                      }}</small>
+                      <p>{{ message.text }}</p>
+                      @if (message.proposal) {
+                        <button class="outline" (click)="review(message)">
+                          {{
+                            message.proposal.operation === "delete"
+                              ? "Review & delete"
+                              : message.proposal.operation === "update"
+                                ? "Review & update"
+                                : "Review & save"
+                          }}
+                          {{ message.proposal.kind.toLowerCase() }}
+                        </button>
+                      }
+                      @if (message.explanation?.length) {
+                        <details class="explanation">
+                          <summary>Local intent explanation</summary>
+                          <p>
+                            Token occlusion · confidence
+                            {{ ((message.confidence || 0) * 100).toFixed(0) }}%
+                            · not a guarantee of correctness
+                          </p>
+                          @for (term of message.explanation; track $index) {
+                            <span class="token-chip"
+                              >{{ term.token }}
+                              {{ term.contribution.toFixed(2) }}</span
+                            >
+                          }
+                        </details>
+                      }
+                      @if (
+                        training &&
+                        message.source &&
+                        message.location === "local backend"
+                      ) {
+                        <div class="feedback">
+                          <label
+                            >Correct intent
+                            <select
+                              [(ngModel)]="message.intent"
+                              [disabled]="!!message.taught"
+                            >
+                              <option value="calendar">Calendar</option>
+                              <option value="reminder">Reminder</option>
+                              <option value="note">Note</option>
+                              <option value="summary">Summary</option>
+                              <option value="chat">Chat</option>
+                            </select></label
+                          ><button
+                            class="text-button"
+                            (click)="teach(message)"
+                            [disabled]="!!message.taught"
+                          >
+                            {{
+                              message.taught
+                                ? "Queued locally ✓"
+                                : "Confirm label & contribute"
+                            }}
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+                @if (busy) {
+                  <div class="processing">
+                    <img [src]="modeRobot(mode)" alt="" />{{ robotState
+                    }}<span>•••</span>
+                  </div>
+                }
+              </section>
+            }
+            <div class="composer-area">
+              <div class="composer">
+                <textarea
+                  [(ngModel)]="draft"
+                  (keydown)="keydown($event)"
+                  placeholder="Ask, plan, or just think out loud…"
+                  aria-label="Message your assistant"
+                  rows="2"
+                ></textarea>
+                <div class="composer-bottom">
+                  <span
+                    ><app-icon
+                      [name]="mode === 'Privacy' ? 'shield' : 'spark'"
+                    />
+                    {{ mode }} mode <span class="small-separator">·</span> Local
+                    model v{{ learning?.model_version || 1 }}</span
+                  ><button
+                    class="send"
+                    (click)="send()"
+                    [disabled]="!draft.trim() || busy"
+                    aria-label="Send message"
+                  >
+                    <app-icon name="arrow" />
+                  </button>
+                </div>
+              </div>
+              <div class="composer-caption">
+                <app-icon name="shield" /><span>{{
+                  mode === "Global"
+                    ? "Global mode sends your prompt to OpenAI with consent. No workspace history is attached."
+                    : "Privacy mode never calls a cloud provider. Default may use cloud for opted-in general chat."
+                }}</span
+                ><span class="enter-hint">↵ to send</span>
+              </div>
+            </div>
+          </div>
+        } @else if (
+          tab === "Calendar" || tab === "Reminders" || tab === "Notes"
+        ) {
+          <div class="content-page">
+            <div class="page-title">
+              <div>
+                <div class="eyebrow">A LITTLE MORE ORGANISED</div>
+                <h1>{{ tab }}</h1>
+                <p>
+                  {{
+                    tab === "Calendar"
+                      ? "Make time for what matters."
+                      : tab === "Reminders"
+                        ? "A little less to keep in your head."
+                        : "Good ideas deserve a little space."
+                  }}
+                </p>
+              </div>
+              <div class="workspace-art">
+                <app-robot
+                  [mode]="mode"
+                  [intent]="workspaceRobotIntent"
+                  [phase]="workspaceRobotPhase"
+                  [reduced]="reduced"
+                  size="panel"
+                  [label]="workspaceRobotLabel"
+                />
+              </div>
+              <button class="primary" (click)="openItem()">
+                <app-icon name="plus" /> Add {{ noun }}
+              </button>
+            </div>
+            <div class="session-notice">
+              AES-256-GCM encrypted storage · Times use {{ timezone }}.
+              Reminders are checked every 30 seconds; due alerts appear while
+              this workspace is open.
+            </div>
+            <div class="items">
+              @for (item of collections[tab]; track item.id) {
+                <article class="item">
+                  <span
+                    class="tile-icon"
+                    [class.mint]="tab === 'Notes'"
+                    [class.lavender]="tab === 'Calendar'"
+                    [class.peach]="tab === 'Reminders'"
+                    ><app-icon [name]="tab.toLowerCase()"
+                  /></span>
+                  <div class="item-content">
+                    <h3 [class.done]="item.done">{{ item.title }}</h3>
+                    <p>{{ item.detail }}</p>
+                    @if (item.fired && !item.done) {
+                      <span class="due-badge">Due now</span>
+                    }
+                  </div>
+                  @if (tab === "Reminders") {
+                    <button class="outline" (click)="toggleDone(item)">
+                      {{ item.done ? "Undo" : "Complete" }}
+                    </button>
+                  }
+                  <button
+                    class="outline"
+                    (click)="openItem(item)"
+                    [attr.aria-label]="'Edit ' + item.title"
+                  >
+                    Edit</button
+                  ><button
+                    class="delete-button"
+                    (click)="remove(item.id)"
+                    [attr.aria-label]="'Delete ' + item.title"
+                  >
+                    ×
+                  </button>
+                </article>
+              } @empty {
+                <div class="empty">
+                  <app-icon [name]="tab.toLowerCase()" />
+                  <h3>A little breathing room.</h3>
+                  <p>Add your first {{ noun }} to get started.</p>
+                </div>
+              }
+            </div>
+          </div>
+        } @else if (tab === "Settings") {
+          <div class="content-page settings">
+            <div class="eyebrow">MADE TO FEEL LIKE YOURS</div>
+            <div class="settings-title-art">
+              <div>
+                <h1>Settings</h1>
+                <p>Your preferences. Your boundaries. Your call.</p>
+              </div>
+              <app-robot mode="Privacy" size="panel" [reduced]="reduced" />
+            </div>
+            <section class="settings-card">
+              <h2>Make yourself comfortable</h2>
+              <div class="setting-row">
+                <div>
+                  <strong>Appearance</strong>
+                  <p>A lighter day or a quieter night.</p>
+                </div>
+                <div class="segmented">
+                  <button
+                    [class.selected]="!dark"
+                    (click)="
+                      dark = false; applyTheme(); notify('Light theme selected')
+                    "
+                  >
+                    Light</button
+                  ><button
+                    [class.selected]="dark"
+                    (click)="
+                      dark = true; applyTheme(); notify('Dark theme selected')
+                    "
+                  >
+                    Dark
+                  </button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <strong>Reduce motion</strong>
+                  <p>Keep the robot and interface still.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="reduced"
+                  aria-label="Reduce motion"
+                />
+              </div>
+            </section>
+            <section class="settings-card">
+              <div class="section-heading">
+                <h2>Privacy & learning</h2>
+                <span class="preview-badge">Persistent privacy budget</span>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <strong>Contribute to federated learning</strong>
+                  <p>
+                    Train from labels you confirm. Independent local workers
+                    send masked, noised updates—not raw examples—to the
+                    aggregator.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="training"
+                  aria-label="Federated learning participation"
+                />
+              </div>
+              <div class="epsilon">
+                <div class="section-heading">
+                  <strong>Differential privacy budget</strong
+                  ><span class="epsilon-value">ε {{ epsilon }}</span>
+                </div>
+                <p>
+                  Lower epsilon means stronger privacy, with a possible accuracy
+                  trade-off.
+                </p>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="0.5"
+                  [(ngModel)]="epsilon"
+                  aria-label="Target epsilon"
+                />
+                <div class="range-labels">
+                  <span>Stronger privacy · 1</span
+                  ><span>Higher utility · 10</span>
+                </div>
+                <div class="privacy-metrics">
+                  <div><small>Target delta</small><strong>10⁻⁵</strong></div>
+                  <div>
+                    <small>Accounted epsilon</small
+                    ><strong
+                      >{{ learning?.epsilon_spent ?? 0 }} /
+                      {{ epsilon }}</strong
+                    >
+                  </div>
+                  <div>
+                    <small>Training status</small
+                    ><strong>{{ learning?.state || "Loading…" }}</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <strong>Allow cloud processing</strong>
+                  <p>
+                    Allow selected prompts to be sent to OpenAI in Global mode,
+                    or for general chat in Default. The provider can read them;
+                    workspace history is not attached.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="cloud"
+                  aria-label="Cloud processing preference"
+                />
+              </div>
+              <div class="session-notice">
+                Client-level Gaussian DP, with conservative lifetime
+                composition. Each reserved round costs ε=0.5 and δ=10⁻⁶, even if
+                aborted or rejected. Delta cap: 10⁻⁵. Lowering epsilon cannot
+                undo earlier releases. Requires 3 real opted-in accounts, each
+                with 3 confirmed examples. Same-host research implementation—not
+                physically isolated devices.
+              </div>
+            </section>
+            <section class="settings-card">
+              <h2>Processing permissions</h2>
+              <div class="setting-row">
+                <div>
+                  <strong>Local assistant</strong>
+                  <p>Classify commands on this backend.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="localAssistant"
+                  aria-label="Local assistant consent"
+                />
+              </div>
+              <div class="setting-row">
+                <div>
+                  <strong>Calendar & reminders</strong>
+                  <p>Read and manage your schedule.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="calendarConsent"
+                  aria-label="Calendar consent"
+                />
+              </div>
+              <div class="setting-row">
+                <div>
+                  <strong>Notes</strong>
+                  <p>Read and manage encrypted notes.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="notesConsent"
+                  aria-label="Notes consent"
+                />
+              </div>
+              <div class="setting-row">
+                <div>
+                  <strong>Summarisation</strong>
+                  <p>
+                    Summarise with the configured local model. No cloud
+                    fallback.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  [(ngModel)]="summaryConsent"
+                  aria-label="Summary consent"
+                />
+              </div>
+              <label for="timezone">Timezone (IANA)</label
+              ><input
+                id="timezone"
+                [(ngModel)]="timezone"
+                placeholder="Asia/Kolkata"
+              />
+              <p>
+                Mode selector value is saved as your default when you save
+                preferences. Switching off training removes unused queued
+                examples.
+              </p>
+              <button
+                class="primary"
+                (click)="saveSettings()"
+                [disabled]="settingsBusy"
+              >
+                {{ settingsBusy ? "Saving…" : "Save preferences & consent" }}
+              </button>
+            </section>
+            <section class="settings-card">
+              <h2>Learning activity</h2>
+              @if (learning && !learning.pipeline_enabled) {
+                <p class="session-notice">
+                  Background learning is disabled by the operator.
+                </p>
+              }
+              <p>{{ learning?.mechanism }}</p>
+              <p>
+                Queued examples: {{ learning?.queued ?? 0 }} · Remaining ε:
+                {{ learning?.remaining ?? 0 }} · Spent δ:
+                {{ learning?.delta_spent ?? 0 }}
+              </p>
+              <p>
+                Cloud:
+                {{
+                  runtime?.cloud_configured
+                    ? "provider configured"
+                    : "not configured"
+                }}
+                · Local LLM:
+                {{ runtime?.local_llm ? "configured" : "task model only" }}
+              </p>
+              <button
+                class="outline"
+                (click)="runLearning()"
+                [disabled]="!training"
+              >
+                Check training eligibility
+              </button>
+              @for (round of learning?.history; track round.id) {
+                <article class="round-row">
+                  <strong>Round {{ round.id }} · {{ round.status }}</strong>
+                  <p>{{ round.detail }}</p>
+                </article>
+              } @empty {
+                <p>No rounds yet. No simulated clients are created.</p>
+              }
+            </section>
+            <section class="settings-card">
+              <h2>Scheduled browser notifications</h2>
+              <p>
+                {{
+                  pushActive
+                    ? "Enabled on this browser"
+                    : "Not enabled on this browser"
+                }}
+              </p>
+              <p>
+                Saved calendar events and reminders send a generic notification
+                at their scheduled time in {{ timezone }}. Titles and notes are
+                never included in the push payload.
+              </p>
+              <p>
+                Optional push contacts your browser’s push provider, even in
+                Privacy mode. This is separate from cloud LLM consent. The
+                backend must stay running; network, OS and browser policies can
+                delay or suppress delivery. Not a guaranteed alarm.
+              </p>
+              @if (!pushSupported || embedded) {
+                <p>
+                  Use a supported browser in a standalone HTTPS tab. On iOS,
+                  install the site to your Home Screen first.
+                </p>
+                <a href="/" target="_blank" rel="noopener"
+                  >Open workspace in a new tab ↗</a
+                >
+              }
+              @if (!pushConfigured) {
+                <p>
+                  Operator setup required: generate the persistent VAPID key
+                  with scripts/init_vapid.py.
+                </p>
+              }
+              <button
+                class="primary"
+                (click)="enablePush()"
+                [disabled]="
+                  pushBusy ||
+                  pushActive ||
+                  !pushConfigured ||
+                  !pushSupported ||
+                  embedded ||
+                  !calendarConsent
+                "
+              >
+                Enable browser push
+              </button>
+              <button
+                class="outline"
+                (click)="disablePush()"
+                [disabled]="pushBusy || !pushBrowserPresent"
+              >
+                Disable on this browser
+              </button>
+              <p>{{ pushDetail }}</p>
+            </section>
+            <section class="settings-card">
+              <h2>Summarisation &amp; model provenance</h2>
+              <p>
+                Default / Privacy summaries:
+                {{ runtime?.summarization_engine || "Local FLAN-T5-small" }}.
+                Neural summaries may paraphrase or make mistakes; check
+                important details against the source.
+              </p>
+              <p role="status">{{ runtime?.local_summary?.detail }}</p>
+              <p>
+                Global summaries: OpenAI
+                {{ runtime?.cloud_model || "gpt-4o-mini" }}, only with cloud
+                consent and a configured API key. Optional Ollama is used for
+                local general chat, separate from the local summary model.
+              </p>
+              <h3>SNIPS public benchmark</h3>
+              @if (snipsStatus?.available && snipsStatus?.metrics) {
+                <p>
+                  {{
+                    (snipsStatus!.metrics!.validation_accuracy * 100).toFixed(
+                      2
+                    )
+                  }}% validation accuracy ·
+                  {{ snipsStatus!.metrics!.validation_samples }} held-out
+                  examples · {{ snipsStatus!.metrics!.train_samples }} training
+                  examples.
+                </p>
+                <p>
+                  Seven SNIPS labels, hashed n-grams and logistic regression
+                  exported to ONNX. Separate from assistant CRUD classification.
+                  Public-data central training—not a federated/DP result.
+                </p>
+              } @else {
+                <p>
+                  No SNIPS artifact on this deployment. Train reproducibly with
+                  scripts/train_snips.py.
+                </p>
+              }
+            </section>
+            <section class="settings-card">
+              <div class="section-heading">
+                <h2>Privacy activity</h2>
+                <button class="outline" (click)="verifyAudit()">
+                  Verify audit chain
+                </button>
+              </div>
+              @if (auditResult) {
+                <p role="status">{{ auditResult }}</p>
+              }
+              <div class="audit-list">
+                @for (row of auditRows; track row.id) {
+                  <div>
+                    <strong>#{{ row.id }} {{ row.action }}</strong
+                    ><code>{{ row.integrity_hash.slice(0, 18) }}…</code>
+                  </div>
+                }
+              </div>
+              <p>
+                {{ runtime?.boundary }} AES keys are held by the backend. This
+                is not end-to-end encryption against its operator. Cryptography
+                and finite-precision DP sampling have not been independently
+                audited.
+              </p>
+              <a href="/PRD.md" target="_blank" rel="noopener"
+                >Read the product requirements ↗</a
+              >
+            </section>
+          </div>
+        } @else {
+          <div class="content-page settings">
+            <div class="eyebrow">YOUR CORNER OF THE INTERNET</div>
+            <h1>Profile</h1>
+            <p>A little introduction goes a long way.</p>
+            <section class="settings-card">
+              <div class="profile-avatar">
+                {{ name.slice(0, 1).toUpperCase() || "A" }}
+              </div>
+              <label for="profile-name">Display name</label
+              ><input id="profile-name" [(ngModel)]="name" maxlength="40" />
+              <p>{{ email }} · Your profile is stored on this backend.</p>
+              <button class="primary" (click)="saveProfile()">
+                Save profile</button
+              ><button class="outline" (click)="logout()">
+                <app-icon name="logout" /> Sign out
+              </button>
+            </section>
+            <section class="settings-card">
+              <h2>Change password</h2>
+              <label for="current-password">Current password</label
+              ><input
+                id="current-password"
+                type="password"
+                autocomplete="current-password"
+                [(ngModel)]="currentPassword"
+              /><label for="new-password">New password</label
+              ><input
+                id="new-password"
+                type="password"
+                autocomplete="new-password"
+                [(ngModel)]="newPassword"
+              />
+              <p>
+                At least 12 characters; up to 72 UTF-8 bytes. Changing your
+                password signs out all sessions.
+              </p>
+              <button class="outline" (click)="changePassword()">
+                Change password & sign out
+              </button>
+            </section>
+          </div>
+        }
+      </main>
+      <footer class="workspace-footer">
+        <span><span class="dot"></span> A little help, on your terms.</span
+        ><span
+          >PPDA <span class="footer-dot">/</span> Local-first workspace</span
+        >
+      </footer>
+    </div>
+  }
+  @if (toast) {
+    <div class="toast" role="status"><app-icon name="check" />{{ toast }}</div>
+  }
+  @if (adding) {
+    <div class="modal-backdrop" (click)="closeItem()">
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        (click)="$event.stopPropagation()"
+        (keydown)="dialogKeys($event)"
+      >
+        <div class="section-heading">
+          <h2 id="modal-title">
+            {{ deleting ? "Delete" : editingId === null ? "Add" : "Edit" }}
+            {{ noun }}
+          </h2>
+          <button
+            class="icon-button"
+            (click)="closeItem()"
+            aria-label="Close dialog"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-robot">
+          <app-robot
+            [mode]="mode"
+            [intent]="workspaceRobotIntent"
+            [phase]="robotPhase"
+            [reduced]="reduced"
+            size="compact"
+          />
+          <p role="status">{{ robotState }}</p>
+        </div>
+        <label for="item-title">Title</label
+        ><input
+          id="item-title"
+          [readOnly]="deleting"
+          [(ngModel)]="itemTitle"
+          maxlength="160"
+          placeholder="Something worth remembering"
+        />
+        @if (tab === "Notes") {
+          <label for="item-detail">Your note</label
+          ><textarea
+            id="item-detail"
+            [readOnly]="deleting"
+            [(ngModel)]="itemDetail"
+            rows="5"
+            placeholder="Start with a thought…"
+          ></textarea>
+        } @else {
+          <label for="item-detail">Date and time</label
+          ><input
+            id="item-detail"
+            [readOnly]="deleting"
+            type="datetime-local"
+            [(ngModel)]="itemDetail"
+          />
+        }
+        @if (tab === "Reminders") {
+          <label
+            ><input
+              type="checkbox"
+              [(ngModel)]="editingDone"
+              [disabled]="deleting"
+            />
+            Completed</label
+          >
+        }
+        @if (modalError) {
+          <p class="error" role="alert">{{ modalError }}</p>
+        }
+        @if (deleting) {
+          <p class="error">
+            This permanently deletes the shown item and cancels unsent
+            notifications. This cannot be undone.
+          </p>
+        }
+        <p class="muted">
+          Saved encrypted on this backend. Review times in {{ timezone }} before
+          confirming.
+        </p>
+        <button class="primary full" (click)="saveItem()" [disabled]="saving">
+          {{
+            deleting ? "Confirm delete" : editingId === null ? "Add" : "Save"
+          }}
+          {{ noun }}
+        </button>
+      </section>
+    </div>
+  }
+</div>

@@ -1,0 +1,132 @@
+{
+  "source_repository": "code-bhaskar/Privacy-Preserving-Digital-Assistant",
+  "source_revision": "f9e5ebd8d9158372aef26d4da025bb9e9c12143c",
+  "files": [
+    {
+      "file": "calendar_normal_robot.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "calendar_normal_robot.png",
+      "source_sha256": "0185629875fefdec41aede62e4a6081b66605f79f61f1ca48139bcc783a6c258",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "calendar_detecting_intent.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "calendar_detecting_intent.png",
+      "source_sha256": "0aefcd0662c4398df61ae71ca6f2f49f3fc4346d19986e8b960f507c016e1a75",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "calendar_clock_face.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "calendar_clock_face.png",
+      "source_sha256": "abb63d1eee89e6d9fb796b0028d9ef5047684b426a281d81e3f9a521fcb87ede",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "calendar_mode.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "calendar_mode.png",
+      "source_sha256": "76f82b626b8e70815341f4f1e2a8a57e79e4aceb4d8c0d9900c8093b9d07baa0",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "calendar_confirmed.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "calendar_confirmed.png",
+      "source_sha256": "3cb7675e7791fab4b5e772b8fc17de1a1d037873064b182d39d6aa81e511abac",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "reminder_normal_robot.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "reminder_normal_robot.png",
+      "source_sha256": "de257f741f8b5fb7ee2a544cae10a7f7feae0ae5148043556e7e07009ddb47e7",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "reminder_detecting_intent.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "reminder_detecting_intent.png",
+      "source_sha256": "98a62778d1bf4e6cd5aae6513f8c610ed3b3431242d25e7a1ce14724326006e2",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "reminder_notepad_appears.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "reminder_notepad_appears.png",
+      "source_sha256": "8e27f91856080fda3ab78f8b391c761c0161f58e975a2f063f5806c515f00233",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "reminder_writing_task.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "reminder_writing_task.png",
+      "source_sha256": "983a5c54f36b902aa05e9dba44310119ab50c5e1cf8173612cced33bed77408c",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "reminder_saved.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "reminder_saved.png",
+      "source_sha256": "5e10f1f6538b8d634afaebff01fa2ae156d00d67eeb843fbddde62f3b62546c7",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "summarizer_normal_robot.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "summarizer_normal_robot.png",
+      "source_sha256": "05cf7661d8a7b26b2216488cbe7fc2b7518eb3e93f8af2556b9101736fbe676c",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "summarizer_thinking_begins.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "summarizer_thinking_begins.png",
+      "source_sha256": "584c65e2590ae51ae6282c1b7baecdfa26d41321096091e89bc499608334e9a2",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "summarizer_deep_processing.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "summarizer_deep_processing.png",
+      "source_sha256": "ff0a2875ed88f94e5cc6e194170aeb7cc4f634231ca9a3c691b12d602911f3b0",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "summarizer_information_compression.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "summarizer_information_compression.png",
+      "source_sha256": "02bcc86ce7745d4d1f378e213d836c8fb87139ac548bf23f627f93d49e51a5c1",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "summarizer_summary_ready.webp",
+      "archive": "robot_gif_frames_named.zip",
+      "original": "summarizer_summary_ready.png",
+      "source_sha256": "3ebe3c79dd3708dc4a0459c30595c4a243d01e1da3849f5af45a3fede00b9d78",
+      "archive_sha256": "5a31d661e2e67ac4f661ac8958793c2069eeaaa7f6ef2e22178cb1ac9555f661"
+    },
+    {
+      "file": "default_mode_robot_blue.webp",
+      "archive": "robot_modes_separate_named.zip",
+      "original": "default_mode_robot_blue.png",
+      "source_sha256": "01300619744263069c022b615a95c0036219dbaf75b34be17e8d6561c16befe2",
+      "archive_sha256": "2041ef464ea050c781ca9f1d7256efd74bc76d792f5cd34b978ee7bcdcba4342"
+    },
+    {
+      "file": "privacy_mode_robot_green.webp",
+      "archive": "robot_modes_separate_named.zip",
+      "original": "privacy_mode_robot_green.png",
+      "source_sha256": "4946ed2569374b6f0e72952024692762aba17a7271ed377e30cb2daf22c172b4",
+      "archive_sha256": "2041ef464ea050c781ca9f1d7256efd74bc76d792f5cd34b978ee7bcdcba4342"
+    },
+    {
+      "file": "global_model_robot_soft_red.webp",
+      "archive": "robot_modes_separate_named.zip",
+      "original": "global_model_robot_soft_red.png",
+      "source_sha256": "0e06684e8cd98d45de36471314063f2e65d77e2eca780ca0bd041dfdb23da7c3",
+      "archive_sha256": "2041ef464ea050c781ca9f1d7256efd74bc76d792f5cd34b978ee7bcdcba4342"
+    }
+  ]
+}
