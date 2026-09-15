@@ -27,8 +27,16 @@ class Settings(BaseSettings):
     ] = "flan-t5-small"
     local_summary_dir: str = str(ROOT / ".runtime/summary-models")
     snips_dir: str = str(ROOT / "models/snips")
+    # Per-token epsilon for the k-RR release in fl/text_dp.py. Higher keeps more
+    # words intact; lower protects more and degrades the escalated prompt.
+    escalation_token_epsilon: float = 10.0
+
+    def escalation_epsilon(self):
+        if not 0 < self.escalation_token_epsilon <= 20:
+            raise RuntimeError("ESCALATION_TOKEN_EPSILON must be in (0, 20]")
 
     def keys(self):
+        self.escalation_epsilon()
         if (
             self.cookie_samesite == "none" or self.cookie_partitioned
         ) and not self.cookie_secure:

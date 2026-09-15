@@ -11,8 +11,15 @@ const { outputText } = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2022,
   },
 });
-const { intentForRobot, robotForBackendIntent, MODE_ROBOTS, ROBOT_FRAMES } =
-  await import(
+const {
+  intentForRobot,
+  robotForBackendIntent,
+  routeRobot,
+  routeMode,
+  routeName,
+  MODE_ROBOTS,
+  ROBOT_FRAMES,
+} = await import(
     "data:text/javascript;base64," + Buffer.from(outputText).toString("base64")
   );
 for (const phrase of [
@@ -51,6 +58,18 @@ for (const phrase of [
 assert.equal(intentForRobot("Hello there"), "idle");
 assert.equal(robotForBackendIntent("summary"), "summarizer");
 assert.equal(robotForBackendIntent("note"), "reminder");
+// A released prompt must switch the artwork to the global robot whatever mode
+// was selected, and a local answer must not claim the global robot.
+assert.equal(routeRobot("global", "Privacy"), MODE_ROBOTS["Global"]);
+assert.equal(routeRobot("global", "Default"), MODE_ROBOTS["Global"]);
+assert.equal(routeRobot("local", "Privacy"), MODE_ROBOTS["Privacy"]);
+assert.equal(routeRobot("local", "Default"), MODE_ROBOTS["Default"]);
+assert.equal(routeRobot(undefined, "Global"), MODE_ROBOTS["Global"]);
+assert.equal(routeMode("global", "Privacy"), "Global");
+assert.equal(routeMode("local", "Privacy"), "Privacy");
+assert.equal(routeName("global"), "Global model");
+assert.equal(routeName("local"), "Local model");
+assert.equal(routeName(undefined), "Local model");
 const assets = [
   ...Object.values(MODE_ROBOTS),
   ...Object.values(ROBOT_FRAMES).flat(),

@@ -31,6 +31,7 @@ from .database import (
     entries,
     audits,
     examples,
+    ledger,
     rounds,
     record,
     push_subscriptions,
@@ -46,9 +47,16 @@ from .security import (
 from .preferences import DEFAULTS, prefs, expenditure, affordable
 from .local_model import classify
 from . import summarization
-from . import notifications, assistant_actions, snips
-from fl import pipeline
-from fl.privacy import EPSILON_PER_ROUND, DELTA_PER_ROUND, DELTA_CAP, CLIP_NORM
+from . import notifications, assistant_actions, snips, normalizer, capability
+from fl import pipeline, text_dp
+from fl.privacy import (
+    EPSILON_PER_ROUND,
+    DELTA_PER_ROUND,
+    DELTA_CAP,
+    CLIP_NORM,
+    EPSILON_ESCALATION,
+    DELTA_ESCALATION,
+)
 
 COOKIE = "ppda_session"
 PREFIX = "/api/v1"
@@ -744,38 +752,84 @@ def delete_entry(
     return {"ok": True}
 
 
+# Recognised sensitive content is never escalated automatically. Explicit Global
+# mode still allows it, with the DP layer applied, because that mode is documented
+# as a deliberate choice. This is a keyword guard, not a privacy classifier.
+SENSITIVE = re.compile(
+    r"\b(password|secret|private|bank|medical|diagnosis|credit|ssn|token|address|personal)\b|[\w.+-]+@[\w.-]+",
+    re.I,
+)
+
+
+# Sensitive content is never escalated automatically. Explicit Global mode still
+# sends it, but only after de-identification, and says so in the response.
+SENSITIVE = re.compile(
+    r"\b(password|secret|private|bank|medical|diagnosis|credit|ssn|token|address|personal)\b|[\w.+-]+@[\w.-]+",
+    re.I,
+)
+
+DP_NOTICE = (
+    "Differential privacy here is per token, not per document: each protected "
+    "word is released by k-ary randomised response at epsilon_token, so a prompt "
+    "with n protected tokens has an n*epsilon_token composition bound. Rare "
+    "words, e-mail addresses and phone-like numbers are redacted outright, which "
+    "is what removes most identifying content. The provider reply is not a "
+    "private release."
+)
+
+
+# Instruction prefixes are not part of the record's title.
+TITLE_PREFIX = re.compile(
+    r"^(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
+    r"(?:remind\s+me(?:\s+to)?|set\s+(?:a\s+)?reminder(?:\s+(?:to|for))?|"
+    r"add\s+(?:a\s+)?reminder(?:\s+(?:to|for))?|create\s+(?:a\s+)?reminder(?:\s+(?:to|for))?|"
+    r"don'?t\s+forget\s+to|remember\s+to|"
+    r"add\s+(?:an?\s+)?(?:event|appointment|meeting)(?:\s+to\s+my\s+calendar)?|"
+    r"create\s+(?:an?\s+)?(?:event|appointment|meeting)(?:\s+to\s+my\s+calendar)?|"
+    r"schedule\s+(?:an?\s+)?(?:event|appointment|meeting)?|"
+    r"put\s+(?:an?\s+)?(?:event|appointment|meeting)\s+(?:on|in)\s+my\s+calendar|"
+    r"write\s+(?:a\s+)?note(?:\s+(?:about|that\s+says))?|take\s+(?:a\s+)?note(?:\s+of)?|"
+    r"save\s+(?:a\s+)?note|add\s+(?:a\s+)?note|note|create\s+(?:a\s+)?task|add\s+(?:a\s+)?task)"
+    r"\s*[:\-]?\s*",
+    re.I,
+)
+# What is left after removing the instruction and the time can still be a bare
+# preposition; that is not a title either.
+DANGLING = re.compile(r"^(?:for|to|about|on|at|by|in|of|from|with|the|my|me)\b", re.I)
+PLACEHOLDER = {"Calendar": "Calendar event", "Reminders": "Reminder", "Notes": "Note"}
+
+
 def proposal(text, label, user):
     kind = {"calendar": "Calendar", "reminder": "Reminders", "note": "Notes"}[label]
     detail = ""
     title = text
     if label != "note":
-        match = re.search(
-            r"\b(tomorrow|today|next\s+\w+|in\s+\d+\s+(?:hours?|minutes?|days?)|at\s+\d{1,2}(?::\d{2})?(?:\s*(?:am|pm))?|\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?)\b.*",
-            text,
-            re.I,
-        )
+        match = assistant_actions.time_span(text)
         if match:
-            date = dateparser.parse(
-                match.group(),
-                settings={
-                    "PREFER_DATES_FROM": "future",
-                    "TIMEZONE": prefs(user)["timezone"],
-                    "RETURN_AS_TIMEZONE_AWARE": True,
-                },
-            )
-            if date:
-                detail = date.strftime("%Y-%m-%dT%H:%M")
+            detail, _ = assistant_actions.parse_time(text, prefs(user)["timezone"])
+            if detail:
                 title = text[: match.start()].strip()
-    title = re.sub(
-        r"^(remind me to|remind me|set a reminder to|set a reminder|add a reminder to|add a reminder|schedule|create (?:a )?(?:note|task|event)|write a note|add (?:a )?(?:note|reminder|event))\s*[:\-]?\s*",
-        "",
-        title,
-        flags=re.I,
-    )
     quoted = re.search(r'"([^"\n]+)"', title)
     if quoted:
         title = quoted.group(1)
-    return {"kind": kind, "title": (title or text)[:160], "detail": detail}
+    else:
+        previous = None
+        while previous != title:
+            previous = title
+            title = TITLE_PREFIX.sub("", title, count=1).strip(" ,:-")
+        while DANGLING.match(title):
+            title = title.split(None, 1)[1].strip(" ,:-") if " " in title else ""
+        title = title.rstrip(" ,:-").strip()
+    if not title:
+        # The request had no subject. Say so in the review instead of inventing
+        # meaning from a preposition.
+        return {
+            "kind": kind,
+            "title": PLACEHOLDER[kind],
+            "detail": detail,
+            "title_guessed": True,
+        }
+    return {"kind": kind, "title": title[:160], "detail": detail}
 
 
 async def cloud_answer(text):
@@ -794,7 +848,7 @@ async def cloud_answer(text):
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are a helpful assistant. You cannot access or modify the user calendar, notes, or reminders. Do not claim to have performed actions.",
+                            "content": "You are a helpful assistant. You cannot access or modify the user calendar, notes, or reminders. Do not claim to have performed actions. Some words may be replaced by [redacted]; answer what you can and say when you cannot.",
                         },
                         {"role": "user", "content": text},
                     ],
@@ -839,12 +893,81 @@ async def local_chat(text):
     return "The local intent model handles scheduling, reminders, notes, and configured local summaries—not general conversation. Configure a local Ollama runtime for broader offline chat, or explicitly enable Global mode."
 
 
+def escalation_policy(user, mode, sensitive):
+    """Decide whether an out-of-capability prompt may be sent to the global model.
+
+    Returns (allowed, explanation, status). A status is only set for explicit
+    Global mode, where the user asked for the provider directly and therefore
+    gets an error instead of a silent local fallback.
+    """
+    explicit = mode == "Global"
+    if mode == "Privacy":
+        return (
+            False,
+            "Privacy mode never sends a prompt to a cloud model, so this stayed on your device.",
+            None,
+        )
+    if sensitive and not explicit:
+        return (
+            False,
+            "This prompt matches the sensitive-content guard, so automatic escalation was refused.",
+            None,
+        )
+    if not prefs(user)["cloud"]:
+        return (
+            False,
+            "Cloud escalation consent is disabled in Settings, so nothing left this device.",
+            403 if explicit else None,
+        )
+    if not settings.openai_api_key:
+        return (
+            False,
+            "No global provider is configured on this backend (OPENAI_API_KEY), so nothing was sent.",
+            503 if explicit else None,
+        )
+    with engine.connect() as conn:
+        if not affordable(conn, user, EPSILON_ESCALATION, DELTA_ESCALATION):
+            return (
+                False,
+                "Your privacy budget cannot cover another escalated release; raise the target in Settings or keep working locally.",
+                428 if explicit else None,
+            )
+    return (
+        True,
+        "Outside local capability, so a de-identified copy was released to the global model.",
+        None,
+    )
+
+
+def privacy_report(release, spent, target):
+    return {
+        "applied": True,
+        "mechanism": release["mechanism"],
+        "epsilon_token": release["epsilon_token"],
+        "retention_probability": release["retention_probability"],
+        "vocabulary_size": release["vocabulary_size"],
+        "protected_tokens": release["protected_tokens"],
+        "composition_bound": release["composed_epsilon"],
+        "redactions": release["redactions"],
+        "perturbed": release["perturbed"],
+        "sent_prompt": release["text"],
+        "epsilon_charged": EPSILON_ESCALATION,
+        "epsilon_spent": spent,
+        "epsilon_target": target,
+        "notice": DP_NOTICE,
+    }
+
+
 @app.post(PREFIX + "/assistant/command")
 async def command(body: Command, user=Depends(current_user)):
     require(user, "assistant")
-    text = body.text.strip()
-    if not text:
+    raw = body.text.strip()
+    if not raw:
         raise HTTPException(422, "Enter a message")
+    # 1. Tolerant offline reading of the request: spelling and spoken numbers.
+    understanding = normalizer.normalize(raw)
+    text = understanding["text"]
+    # 2. The local intent model always sees the request first.
     with engine.connect() as conn:
         version, weights = pipeline.active_model(conn)
     label, confidence, explanation = classify(weights, text)
@@ -872,15 +995,16 @@ async def command(body: Command, user=Depends(current_user)):
         intent = {"Calendar": "calendar", "Reminders": "reminder", "Notes": "note"}.get(
             kind, "chat"
         )
-    # Default never sends workspace commands to cloud. Only explicit Global, or opted-in
-    # unsupported general chat in Default, can use a provider. No history attached.
-    use_cloud = body.mode == "Global" or (
-        body.mode == "Default"
-        and intent == "chat"
-        and op not in ("update", "delete")
-        and prefs(user)["cloud"]
-        and bool(settings.openai_api_key)
-        and not re.search(r"\b(hi|hello|thanks|help|morning|hey)\b", text, re.I)
+    # 3. Capability decision: can this deployment actually do the work?
+    # Deterministic evidence, including a kind recovered from a record ID, wins.
+    deterministic = intent if kind or intent == "summary" else None
+    decision = capability.assess(
+        text,
+        label,
+        confidence,
+        summary_ready=summarization.status()["ready"],
+        local_llm=bool(settings.ollama_url and settings.ollama_model),
+        task=deterministic,
     )
     result = {
         "intent": intent,
@@ -890,30 +1014,97 @@ async def command(body: Command, user=Depends(current_user)):
         "explanation_method": "token occlusion (local intent classifier)",
         "model_version": version,
         "location": "local backend",
+        "route": "local",
+        "router": {
+            "capable": decision.capable,
+            "capability": decision.capability,
+            "handler": decision.handler,
+            "reason": decision.reason,
+            "evidence": decision.evidence,
+            "signals": decision.signals,
+            "policy": "",
+            "outcome": "local",
+        },
+        "normalized": understanding,
+        "privacy": None,
         "proposal": None,
         "text": "",
         "summarization_engine": None,
+        "changes": [],
+        "check": None,
     }
-    if body.mode == "Default" and re.search(
-        r"\b(password|secret|private|bank|medical|diagnosis|credit|ssn|token|address|personal)\b|[\w.+-]+@[\w.-]+",
-        text,
-        re.I,
-    ):
-        use_cloud = False
-    if use_cloud:
-        require(user, "cloud")
-        with transaction() as conn:
-            record(conn, user["id"], "CLOUD_PROMPT_AUTHORIZED")
-        try:
-            result["text"] = await cloud_answer(text)
-        except HTTPException:
+    sensitive = bool(SENSITIVE.search(text))
+    escalate = body.mode == "Global" or not decision.capable
+    if escalate:
+        allowed, policy, status = escalation_policy(user, body.mode, sensitive)
+        result["router"]["policy"] = policy
+        if allowed:
+            # 4. Differential privacy is applied before anything leaves the host.
+            release = text_dp.perturb(text, settings.escalation_token_epsilon)
             with transaction() as conn:
-                record(conn, user["id"], "CLOUD_PROVIDER_FAILED")
-            raise
-        result["location"] = "OpenAI · " + settings.openai_model
-        if intent == "summary":
-            result["summarization_engine"] = "OpenAI · " + settings.openai_model
-    elif intent == "summary":
+                record(conn, user["id"], "CLOUD_PROMPT_AUTHORIZED")
+            try:
+                answer = await cloud_answer(release["text"])
+            except HTTPException:
+                with transaction() as conn:
+                    record(conn, user["id"], "CLOUD_PROVIDER_FAILED")
+                raise
+            # Charged after a successful release; a failed provider call is not
+            # billed, because nothing was published.
+            with transaction() as conn:
+                conn.execute(
+                    ledger.insert().values(
+                        user_id=user["id"],
+                        round_id=None,
+                        epsilon=EPSILON_ESCALATION,
+                        delta=DELTA_ESCALATION,
+                    )
+                )
+                record(
+                    conn,
+                    user["id"],
+                    "CLOUD_ESCALATION_DP_RELEASE"
+                    if decision.capable is False
+                    else "CLOUD_PROMPT_SENT",
+                )
+                spent, _ = expenditure(conn, user["id"])
+            result["route"] = "global"
+            result["location"] = "OpenAI · " + settings.openai_model
+            result["text"] = answer
+            result["privacy"] = privacy_report(
+                release, spent, prefs(user)["epsilon"]
+            )
+            result["router"]["outcome"] = "escalated"
+            if intent == "summary":
+                result["summarization_engine"] = "OpenAI · " + settings.openai_model
+            with transaction() as conn:
+                record(conn, user["id"], "ASSISTANT_CLOUD_COMPLETED")
+            return result
+        if body.mode == "Global":
+            raise HTTPException(status or 503, policy)
+        result["router"]["outcome"] = "blocked"
+        result["text"] = (
+            policy
+            + " "
+            + (
+                "Rephrase it as a calendar, reminder, note or summary request to keep it local."
+                if body.mode == "Privacy"
+                else "Nothing was changed and nothing was sent."
+            )
+        )
+        result["changes"] = []
+        result["check"] = {
+            "ok": False,
+            "summary": "No action taken: the request needs the global model.",
+            "notes": understanding["notes"],
+            "warnings": [decision.reason],
+        }
+        with transaction() as conn:
+            record(conn, user["id"], "ASSISTANT_LOCAL_COMPLETED")
+        return result
+    result["router"]["outcome"] = "local"
+    notes = list(understanding["notes"])
+    if intent == "summary":
         require(user, "summary")
         try:
             result["text"] = await asyncio.to_thread(summarization.summarize, text)
@@ -922,11 +1113,27 @@ async def command(body: Command, user=Depends(current_user)):
         except summarization.SummaryUnavailable as exc:
             raise HTTPException(503, str(exc))
         result["summarization_engine"] = summarization.engine_label()
+        result["check"] = {
+            "ok": not result["text"].startswith("Please include the text"),
+            "summary": "Local summary produced; the source text never left this host.",
+            "notes": notes,
+            "warnings": (
+                []
+                if not result["text"].startswith("Please include the text")
+                else ["Include the text you want summarised after “Summarize:”."]
+            ),
+        }
     elif intent in ("calendar", "reminder", "note"):
         kind = {"calendar": "Calendar", "reminder": "Reminders", "note": "Notes"}[
             intent
         ]
         kind_consent(kind, user)
+        if kind != "Notes":
+            _, parse_note = assistant_actions.parse_time(
+                text, prefs(user)["timezone"]
+            )
+            if parse_note:
+                notes.append(parse_note)
         result.update(
             assistant_actions.plan(
                 text,
@@ -934,20 +1141,38 @@ async def command(body: Command, user=Depends(current_user)):
                 list_entries(kind, user),
                 prefs(user)["timezone"],
                 lambda: proposal(text, intent, user),
+                notes,
             )
         )
+        if result["proposal"] and result["proposal"].pop("title_guessed", False):
+            # A placeholder title is a draft the user must complete, not a guess
+            # to be silently saved.
+            result["check"]["ok"] = False
+            result["check"]["summary"] = "Review the warnings below before confirming."
+            result["check"]["warnings"].append(
+                "I couldn’t find a subject in your message, so the title is a "
+                "placeholder — type the real one before saving."
+            )
     elif op in ("update", "delete"):
         result["text"] = (
             "Specify an existing calendar event or reminder using its ID or a quoted title. Nothing was changed."
         )
+        result["check"] = {
+            "ok": False,
+            "summary": "Nothing was changed.",
+            "notes": notes,
+            "warnings": ["No item was identified."],
+        }
     else:
         result["text"] = await local_chat(text)
+        result["check"] = {
+            "ok": True,
+            "summary": "Answered locally.",
+            "notes": notes,
+            "warnings": [],
+        }
     with transaction() as conn:
-        record(
-            conn,
-            user["id"],
-            "ASSISTANT_CLOUD_COMPLETED" if use_cloud else "ASSISTANT_LOCAL_COMPLETED",
-        )
+        record(conn, user["id"], "ASSISTANT_LOCAL_COMPLETED")
     return result
 
 

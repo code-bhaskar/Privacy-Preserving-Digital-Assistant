@@ -91,7 +91,8 @@ ledger = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("user_id", ForeignKey("users.id"), nullable=False, index=True),
-    Column("round_id", ForeignKey("federated_rounds.id"), nullable=False),
+    # Null for prompt-escalation releases, which belong to no federated round.
+    Column("round_id", ForeignKey("federated_rounds.id"), nullable=True),
     Column("epsilon", Float, nullable=False),
     Column("delta", Float, nullable=False),
 )
