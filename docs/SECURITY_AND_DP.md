@@ -52,6 +52,29 @@ The sampler uses OS-backed randomness through Python SystemRandom.normalvariate,
 
 Candidate quality scores and publication/rejection decisions use the noised aggregate and public seed data, so they are post-processing of the protected updates. The release does not report raw local training accuracy, losses, gradient norms or private-data-dependent clipping calibration.
 
+## Optional local LLM intent classification
+
+When `OLLAMA_URL`/`OLLAMA_MODEL` are configured, `app/llm_intent.py` asks that
+loopback runtime for a label from a fixed set
+(`calendar|reminder|note|summary|chat|out_of_scope`) with `format: json` and
+`temperature: 0`. Its reading outranks the bundled 128-feature softmax, but the
+trust boundary is deliberately narrow:
+
+- **Loopback only.** A non-loopback URL is refused before any request is made, so
+  intent classification can never leave the host even if misconfigured.
+- **Fixed output space.** A label outside the set, an unparseable body, a
+  transport error or a timeout all return `None` and the softmax label stands.
+  Nothing is coerced into a valid-looking label.
+- **Advisory, never authoritative.** Deterministic task evidence still wins, and
+  no label writes a record: create/update/delete still require the review dialog
+  and confirmation against an item version hash.
+- **Injection screened.** A message matching an instruction-override pattern
+  disqualifies the LLM label, because a model reading the user's own text can be
+  steered by it. The screen is a heuristic, not a proof; the confirmation step is
+  what actually bounds the damage.
+
+Cost: one extra loopback inference per message when a runtime is configured.
+
 ## Prompt escalation accounting
 
 Out-of-capability requests may be released to the global model. That release is a

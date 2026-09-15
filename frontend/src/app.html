@@ -557,9 +557,18 @@
                         <details class="explanation">
                           <summary>Local intent explanation</summary>
                           <p>
+                            {{
+                              message.intent_classifier ||
+                                "ONNX Runtime · 128-feature softmax intent model"
+                            }}
+                          </p>
+                          <p>
                             Token occlusion · confidence
                             {{ ((message.confidence || 0) * 100).toFixed(0) }}%
                             · not a guarantee of correctness
+                            @if (message.llm_intent) {
+                              · local LLM read “{{ message.llm_intent }}”
+                            }
                           </p>
                           @for (term of message.explanation; track $index) {
                             <span class="token-chip"
@@ -966,6 +975,13 @@
                 }}
                 · Local LLM:
                 {{ runtime?.local_llm ? "configured" : "task model only" }}
+              </p>
+              <p>
+                Intent decided by:
+                {{
+                  runtime?.intent_classifier ||
+                    "ONNX Runtime · 128-feature softmax intent model"
+                }}
               </p>
               <button
                 class="outline"

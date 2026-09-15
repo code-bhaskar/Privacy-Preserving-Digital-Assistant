@@ -143,6 +143,8 @@ type Message = {
   source?: string;
   intent?: string;
   confidence?: number;
+  llm_intent?: string | null;
+  intent_classifier?: string;
   taught?: boolean;
   explanation?: { token: string; contribution: number }[];
 };
@@ -322,6 +324,7 @@ class App {
   runtime: {
     cloud_configured: boolean;
     local_llm: boolean;
+    intent_classifier: string;
     cloud_model: string;
     summarization_engine: string;
     local_summary: { ready: boolean; engine: string; detail: string };
