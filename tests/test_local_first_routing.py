@@ -280,3 +280,51 @@ def test_quoted_titles_win_over_the_instruction_prefix(client, signup):
     ]
     assert draft["title"] == "Design sync"
     assert datetime.fromisoformat(draft["detail"]).hour == 10
+
+
+def test_real_dp_mechanism_reaches_the_provider_and_the_ui(client, signup, monkeypatch):
+    """No mock on the mechanism: the release built by fl/text_dp is what is sent,
+    and privacy_report must agree with its keys or this raises at runtime."""
+    user = signup()
+    enable_cloud(user, client, monkeypatch)
+    sent = []
+
+    async def provider(text):
+        sent.append(text)
+        return "Global answer"
+
+    monkeypatch.setattr("app.main.cloud_answer", provider)
+    # Out of scope, and carrying a phone number but no guard keyword, so the
+    # automatic escalation path is allowed and redaction is exercised.
+    original = "explain how photosynthesis works and call 98765 43210"
+    result = command(client, original)
+    assert result["route"] == "global"
+    privacy = result["privacy"]
+    assert len(sent) == 1 and sent[0] == privacy["sent_prompt"]
+    assert sent[0] != original
+    assert "98765" not in sent[0] and "43210" not in sent[0]
+    # Every field the UI renders is really present and numeric where claimed.
+    assert privacy["applied"] is True
+    assert privacy["vocabulary_size"] > 1000
+    assert 0 < privacy["retention_probability"] < 1
+    assert privacy["protected_tokens"] >= 1
+    assert privacy["composition_bound"] == pytest.approx(
+        privacy["epsilon_token"] * privacy["protected_tokens"]
+    )
+    assert any(entry["type"] == "phone-or-id" for entry in privacy["redactions"])
+    assert privacy["epsilon_charged"] == 0.25
+    assert "per token" in privacy["notice"]
+    # The ledger charge is the real mechanism's, not a mocked constant.
+    assert client.get(P + "/learning/status").json()["epsilon_spent"] == pytest.approx(
+        0.25
+    )
+
+
+def test_an_email_in_the_prompt_blocks_automatic_escalation(client, signup, monkeypatch):
+    user = signup()
+    enable_cloud(user, client, monkeypatch)
+    seen = mock_provider(monkeypatch)
+    result = command(client, "what is the capital of France, ask a@b.com")
+    assert result["route"] == "local" and seen == []
+    assert "sensitive" in result["router"]["policy"].lower()
+    assert client.get(P + "/learning/status").json()["epsilon_spent"] == 0
