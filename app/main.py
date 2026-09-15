@@ -45,10 +45,11 @@ from .security import (
     DUMMY_HASH,
 )
 from .preferences import DEFAULTS, prefs, expenditure, affordable
-from .local_model import classify
+from .local_model import classify, SHAPE
 from . import summarization
 from . import notifications, assistant_actions, snips, normalizer, capability, llm_intent
 from fl import pipeline, text_dp
+from fl.lora import pipeline as lora_stage
 from fl.privacy import (
     EPSILON_PER_ROUND,
     DELTA_PER_ROUND,
@@ -56,6 +57,7 @@ from fl.privacy import (
     CLIP_NORM,
     EPSILON_ESCALATION,
     DELTA_ESCALATION,
+    sigma,
 )
 
 COOKIE = "ppda_session"
@@ -222,6 +224,10 @@ class Entry(Strict):
     detail: str = Field(default="", max_length=20000)
     done: bool = False
     learning_text: str | None = Field(default=None, max_length=10000)
+    # Where the label on this draft came from: "user" for a typed or corrected
+    # label, "local-llm" when the loopback LLM classified the message and the
+    # person confirmed that draft. Stored inside the example's ciphertext.
+    learning_source: Literal["user", "local-llm"] = "user"
     expected_version: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
     @field_validator("title")
@@ -370,15 +376,17 @@ def require(user, category):
         raise HTTPException(403, f"Enable {category} consent in Settings first")
 
 
-def training_example(conn, user, text, label):
+def training_example(conn, user, text, label, source="user"):
+    """Queue one encrypted example for the next federated round.
+
+    `source` records where the label came from — "user" for a label the person
+    typed or corrected in the review dialog, "local-llm" for one the loopback LLM
+    proposed and the person accepted. It is stored inside the ciphertext, so it
+    never appears in plaintext anywhere, and the client workers ignore it: it
+    exists for provenance, not for training.
+    """
     user = conn.execute(select(users).where(users.c.id == user["id"])).mappings().one()
-    category = {
-        "calendar": "calendar",
-        "reminder": "calendar",
-        "note": "notes",
-        "summary": "summary",
-        "chat": "assistant",
-    }[label]
+    category = LABEL_CONSENT[label]
     if not prefs(user)["training"] or not prefs(user)[category]:
         return False
     count = conn.execute(
@@ -391,7 +399,9 @@ def training_example(conn, user, text, label):
     conn.execute(
         examples.insert().values(
             user_id=user["id"],
-            ciphertext=encrypt(user["id"], "training", {"text": text, "label": label}),
+            ciphertext=encrypt(
+                user["id"], "training", {"text": text, "label": label, "source": source}
+            ),
             used=False,
         )
     )
@@ -674,6 +684,7 @@ def create_entry(kind: str, body: Entry, user=Depends(current_user)):
                 {"Calendar": "calendar", "Reminders": "reminder", "Notes": "note"}[
                     kind
                 ],
+                source=body.learning_source,
             )
         row = conn.execute(select(entries).where(entries.c.id == uid)).mappings().one()
         return entry_view(row, user)
@@ -752,17 +763,9 @@ def delete_entry(
     return {"ok": True}
 
 
-# Recognised sensitive content is never escalated automatically. Explicit Global
-# mode still allows it, with the DP layer applied, because that mode is documented
-# as a deliberate choice. This is a keyword guard, not a privacy classifier.
-SENSITIVE = re.compile(
-    r"\b(password|secret|private|bank|medical|diagnosis|credit|ssn|token|address|personal)\b|[\w.+-]+@[\w.-]+",
-    re.I,
-)
-
-
 # Sensitive content is never escalated automatically. Explicit Global mode still
 # sends it, but only after de-identification, and says so in the response.
+# This is a keyword guard, not a privacy classifier.
 SENSITIVE = re.compile(
     r"\b(password|secret|private|bank|medical|diagnosis|credit|ssn|token|address|personal)\b|[\w.+-]+@[\w.-]+",
     re.I,
@@ -797,6 +800,25 @@ TITLE_PREFIX = re.compile(
 # preposition; that is not a title either.
 DANGLING = re.compile(r"^(?:for|to|about|on|at|by|in|of|from|with|the|my|me)\b", re.I)
 PLACEHOLDER = {"Calendar": "Calendar event", "Reminders": "Reminder", "Notes": "Note"}
+
+# One source of truth for "which processing consent does this understood label
+# need". Used when queueing a training example, when admitting a request to the
+# executor, and when deciding whether a local LLM label may be adopted as the
+# task. Reminders share the calendar category, as they do in the settings UI.
+LABEL_CONSENT = {
+    "calendar": "calendar",
+    "reminder": "calendar",
+    "note": "notes",
+    "summary": "summary",
+    "chat": "assistant",
+}
+# Labels that mutate or read the workspace, so they are the only ones an LLM
+# reading may select. `summary` is excluded: it needs source text that only the
+# deterministic "Summarize:" signal guarantees.
+TASK_CONSENT = {
+    label: LABEL_CONSENT[label] for label in ("calendar", "reminder", "note")
+}
+KIND_OF_LABEL = {"calendar": "Calendar", "reminder": "Reminders", "note": "Notes"}
 
 
 def proposal(text, label, user):
@@ -1010,11 +1032,48 @@ async def command(body: Command, user=Depends(current_user)):
         task=deterministic,
         llm_label=(llm or {}).get("label"),
     )
+    # 3b. The local LLM's reading is the executed task, not merely evidence shown
+    # in the report. Without this step the router could say "reminder, handled
+    # locally" while the executor answered the same message as small talk, which
+    # is exactly what made the LLM look unused.
+    # Two limits keep a guessed label from doing damage:
+    #   * `summary` is never adopted — a summary needs source text after
+    #     "Summarize:", which only the deterministic signal guarantees, so an LLM
+    #     label must not be able to invent one;
+    #   * the matching category consent must already be granted, so a paraphrase
+    #     misread as a task cannot turn a chat reply into a 403.
+    # Adopting the label still writes nothing: it selects which review dialog is
+    # prepared, and the user confirms the draft explicitly.
+    # The same screen that disqualified the label for routing disqualifies it
+    # here, so a message cannot steer the classifier into choosing its own task.
+    llm_label = capability.screened_llm_label(text, (llm or {}).get("label"))
+    intent_source = "deterministic" if deterministic else "default"
+    consent_note = ""
+    if (
+        deterministic is None
+        and decision.capable
+        and decision.handler in TASK_CONSENT
+        and llm_label == decision.handler
+    ):
+        category = TASK_CONSENT[decision.handler]
+        if prefs(user)[category]:
+            intent = decision.handler
+            intent_source = "local-llm"
+        else:
+            consent_note = (
+                f"The local LLM read this as a {decision.handler} request, but "
+                f"{category} processing consent is off in Settings, so it was "
+                "answered as conversation instead. Nothing was created."
+            )
     result = {
         "intent": intent,
+        "intent_source": intent_source,
         "model_intent": label,
         "confidence": confidence,
         "llm_intent": (llm or {}).get("label"),
+        # Null when the raw label was discarded by the injection screen: the UI
+        # shows that the LLM answered and that its answer was not used.
+        "llm_intent_used": llm_label,
         "intent_classifier": llm_intent.engine_label(),
         "explanation": explanation,
         "explanation_method": "token occlusion (local intent classifier)",
@@ -1110,6 +1169,8 @@ async def command(body: Command, user=Depends(current_user)):
         return result
     result["router"]["outcome"] = "local"
     notes = list(understanding["notes"])
+    if consent_note:
+        notes.append(consent_note)
     if intent == "summary":
         require(user, "summary")
         try:
@@ -1185,16 +1246,7 @@ async def command(body: Command, user=Depends(current_user)):
 @app.post(PREFIX + "/learning/examples", status_code=201)
 def add_example(body: Example, user=Depends(current_user)):
     require(user, "training")
-    require(
-        user,
-        {
-            "calendar": "calendar",
-            "reminder": "calendar",
-            "note": "notes",
-            "summary": "summary",
-            "chat": "assistant",
-        }[body.label],
-    )
+    require(user, LABEL_CONSENT[body.label])
     with transaction() as conn:
         queued = training_example(conn, user, body.text, body.label)
     if not queued:
@@ -1221,7 +1273,12 @@ def learning_status(user=Depends(current_user)):
         for row in conn.execute(select(rounds).order_by(rounds.c.id.desc())).mappings():
             if user["id"] in json.loads(row["participants"]):
                 history.append(
-                    {"id": row["id"], "status": row["status"], "detail": row["detail"]}
+                    {
+                        "id": row["id"],
+                        "status": row["status"],
+                        "stage": row["stage"],
+                        "detail": row["detail"],
+                    }
                 )
                 if len(history) >= 10:
                     break
@@ -1250,6 +1307,26 @@ def learning_status(user=Depends(current_user)):
         "clip_norm": CLIP_NORM,
         "model_version": version,
         "history": history,
+        "learning_stage": settings.learning_stage,
+        "stage_detail": (
+            lora_stage.status()
+            if settings.learning_stage == "lora"
+            else {
+                "stage": "softmax",
+                "parameterisation": "Full shared matrix; every weight is released and noised",
+                "released_coordinates": SHAPE[0] * SHAPE[1],
+                "clip_norm": CLIP_NORM,
+                "epsilon_per_round": EPSILON_PER_ROUND,
+                "delta_per_round": DELTA_PER_ROUND,
+                "noise_per_coordinate": sigma(
+                    EPSILON_PER_ROUND, DELTA_PER_ROUND, 2 * CLIP_NORM
+                ),
+                "note": (
+                    "Switch to the low-rank stage with LEARNING_STAGE=lora to "
+                    "release a rank-r adapter instead of the whole matrix."
+                ),
+            }
+        ),
         "mechanism": "Client-local Gaussian DP; conservative sequential composition; lifetime accounting",
         "scope": "Single trusted host, real OS workers; not independent physical devices.",
         "pipeline_enabled": settings.pipeline_enabled,
@@ -1325,11 +1402,16 @@ def audit_verify(user=Depends(current_user)):
 
 
 @app.get(PREFIX + "/runtime")
-def runtime(user=Depends(current_user)):
+async def runtime(user=Depends(current_user)):
+    # `probe` is cached and bounded, so a dead runtime costs one short timeout
+    # every 30s rather than a slow settings page. It never raises.
+    llm_runtime = await llm_intent.probe()
     return {
         "local_model": "ONNX Runtime · 128-feature softmax intent model",
         "intent_classifier": llm_intent.engine_label(),
         "local_llm": bool(settings.ollama_url and settings.ollama_model),
+        "llm_runtime": llm_runtime,
+        "learning_stage": settings.learning_stage,
         "summarization_engine": summarization.engine_label(),
         "local_summary": summarization.status(),
         "cloud_model": settings.openai_model,

@@ -82,6 +82,16 @@ rounds = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("status", String, nullable=False),
+    # Which stage produced the round: "softmax" federates the full shared matrix,
+    # "lora" federates a rank-r adapter over a frozen base (fl/lora). Both share
+    # the ledger, the masking protocol and this history, so a user sees one tail.
+    Column(
+        "stage",
+        String,
+        nullable=False,
+        default="softmax",
+        server_default=text("'softmax'"),
+    ),
     Column("participants", Text, nullable=False),
     Column("created_at", Float, nullable=False),
     Column("detail", Text, nullable=False),
@@ -105,6 +115,24 @@ models = Table(
     Column("score", Float, nullable=False),
     Column("active", Boolean, nullable=False),
     Column("round_id", Integer),
+)
+# Lineage of the low-rank stage. One row per completed `lora` round, accepted or
+# not: the aggregated (already noised) adapter, the base it was trained against,
+# the model version it was merged into, and the gate score it received.
+# Rejected rows are kept on purpose — the budget was spent, so the artefact and
+# the reason it was refused stay auditable. No example text is stored here.
+adapters = Table(
+    "lora_adapters",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("round_id", ForeignKey("federated_rounds.id"), nullable=True),
+    Column("rank", Integer, nullable=False),
+    Column("base_model_id", Integer, nullable=False),
+    Column("weights", Text, nullable=False),
+    Column("merged_model_id", Integer, nullable=True),
+    Column("score", Float, nullable=False),
+    Column("accepted", Boolean, nullable=False),
+    Column("created_at", Float, nullable=False),
 )
 
 if not settings.database_url.startswith("sqlite:"):

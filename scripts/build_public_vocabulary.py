@@ -25,6 +25,7 @@ OUTPUT = ROOT / "fl" / "public_vocabulary.txt"
 DOCUMENT_SOURCES = [
     "README.md",
     ".env.example",
+    "docs/LOCAL_LLM_INTENT.md",
     "docs/LOCAL_SUMMARIES.md",
     "docs/NOTIFICATIONS_AND_COMMANDS.md",
     "docs/PRD.md",

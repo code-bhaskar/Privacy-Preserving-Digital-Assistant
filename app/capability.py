@@ -109,6 +109,20 @@ INJECTION = re.compile(
 )
 
 
+def screened_llm_label(text, label):
+    """The local LLM's label after the instruction-override screen.
+
+    One source of truth, used both by `assess` and by the caller that decides
+    which task to execute, so a label disqualified for routing cannot sneak back
+    in as the executed intent. Returns None when there is no label or when the
+    text looks like an attempt to steer the classifier. This is a screen, not a
+    proof: it catches the phrasings that actually appear, not all of them.
+    """
+    if not label:
+        return None
+    return None if INJECTION.search(text) else label
+
+
 def assess(
     text,
     model_label,
@@ -131,9 +145,7 @@ def assess(
     is discarded entirely if the text looks like an instruction-override attempt.
     """
     task = task or local_task(text)
-    injection = bool(INJECTION.search(text))
-    if llm_label and injection:
-        llm_label = None
+    llm_label = screened_llm_label(text, llm_label)
     if task:
         return Route(
             capable=True,
