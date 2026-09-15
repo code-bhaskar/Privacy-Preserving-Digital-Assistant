@@ -144,6 +144,8 @@ type Message = {
   intent?: string;
   confidence?: number;
   llm_intent?: string | null;
+  llm_intent_used?: string | null;
+  intent_source?: string;
   intent_classifier?: string;
   taught?: boolean;
   explanation?: { token: string; contribution: number }[];
@@ -160,6 +162,21 @@ type Preferences = {
   timezone: string;
   mode: string;
 };
+type StageDetail = {
+  stage: string;
+  parameterisation: string;
+  released_coordinates: number;
+  full_matrix_coordinates?: number;
+  dimension_reduction?: number;
+  clip_norm: number;
+  epsilon_per_round: number;
+  delta_per_round: number;
+  noise_per_coordinate: number;
+  rank?: number;
+  local_steps?: number;
+  local_learning_rate?: number;
+  note: string;
+};
 type Learning = {
   state: string;
   queued: number;
@@ -167,10 +184,24 @@ type Learning = {
   delta_spent: number;
   remaining: number;
   model_version: number;
-  history: { id: number; status: string; detail: string }[];
+  history: { id: number; status: string; stage?: string; detail: string }[];
+  learning_stage?: string;
+  stage_detail?: StageDetail;
   mechanism: string;
   scope: string;
   pipeline_enabled: boolean;
+};
+// What app/llm_intent.probe() reports about the operator's local LLM runtime.
+type LlmRuntime = {
+  configured: boolean;
+  loopback: boolean;
+  reachable: boolean;
+  model: string | null;
+  model_present: boolean | null;
+  available_models: string[];
+  simulator: boolean;
+  engine: string;
+  detail: string;
 };
 @Component({
   selector: "app-root",
@@ -236,6 +267,7 @@ class App {
   } | null = null;
   saving = false;
   learningText: string | undefined;
+  learningSource: "user" | "local-llm" = "user";
   settingsBusy = false;
   private previousFocus: HTMLElement | null = null;
   robotState = "Ready when you are";
@@ -324,6 +356,8 @@ class App {
   runtime: {
     cloud_configured: boolean;
     local_llm: boolean;
+    llm_runtime?: LlmRuntime;
+    learning_stage?: string;
     intent_classifier: string;
     cloud_model: string;
     summarization_engine: string;
@@ -632,6 +666,11 @@ class App {
     this.itemDetail = message.proposal.detail;
     this.learningText =
       p.operation === "create" || !p.operation ? message.source : undefined;
+    // Provenance of the label, stored inside the example's ciphertext: the
+    // person confirmed a draft the local LLM classified, rather than typing the
+    // label themselves.
+    this.learningSource =
+      message.intent_source === "local-llm" ? "local-llm" : "user";
     // Assigned after openItem(), which clears the dialog state for manual adds.
     this.reviewChanges = message.changes || [];
     this.reviewCheck = message.check || null;
@@ -666,6 +705,7 @@ class App {
     this.itemTitle = item?.title ?? "";
     this.itemDetail = item?.detail ?? "";
     this.learningText = undefined;
+    this.learningSource = "user";
     this.modalError = "";
     this.adding = true;
     this.setRobot(
@@ -739,7 +779,12 @@ class App {
           ...(this.editingVersion
             ? { expected_version: this.editingVersion }
             : {}),
-          ...(this.learningText ? { learning_text: this.learningText } : {}),
+          ...(this.learningText
+            ? {
+                learning_text: this.learningText,
+                learning_source: this.learningSource,
+              }
+            : {}),
         },
       );
       this.saving = false;
@@ -1123,6 +1168,7 @@ class App {
     this.itemTitle = "";
     this.itemDetail = "";
     this.learningText = undefined;
+    this.learningSource = "user";
     this.draft = "";
     this.runtime = null;
     this.snipsStatus = null;

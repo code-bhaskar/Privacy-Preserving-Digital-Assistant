@@ -1,6 +1,6 @@
 # PPDA — Privacy-Preserving Digital Assistant
 
-A login-first Angular workspace with a real FastAPI backend, encrypted calendar/reminder/note storage, local ONNX intent inference and summarisation, consent-controlled cloud integration, and a single supervised federated-learning pipeline.
+A login-first Angular workspace with a real FastAPI backend, encrypted calendar/reminder/note storage, **local LLM intent classification** with a real ONNX fallback, local summarisation, consent-controlled cloud integration, and a supervised federated-learning pipeline with two selectable stages and client-local differential privacy.
 
 ## What is implemented
 
@@ -9,7 +9,8 @@ A login-first Angular workspace with a real FastAPI backend, encrypted calendar/
 - Backend ownership checks and category-specific processing consent.
 - AES-256-GCM encrypted workspace text and queued training examples, with per-user derived keys, fresh nonces and AAD.
 - Persistent CRUD, real local ONNX Runtime classification, token-occlusion explanations, local neural summaries (FLAN-T5-small default; optional model installation required), and reviewed assistant create/update/delete proposals.
-- **Local-first routing**: every message is normalised offline (tolerant spelling, spoken numbers), classified by the local ONNX intent model, and checked against what this deployment can actually do. Work the local stack handles never leaves the host.
+- **Local-first routing**: every message is normalised offline (tolerant spelling, spoken numbers), classified locally, and checked against what this deployment can actually do. Work the local stack handles never leaves the host.
+- **Local LLM intent classification that is actually executed**: with a loopback Ollama runtime configured, `app/llm_intent.py` labels the request and that label *selects the task* — `ping me about the dentist visit` becomes a reminder draft, reported as `intent_source: "local-llm"`, where the bundled 128-feature softmax reads it as chat at 0.69. Deterministic evidence still outranks it, `summary` is never invented from a label, adoption needs category consent, an instruction-override attempt disqualifies it (`llm_intent_used: null`), and `llm_intent.probe()` reports whether the runtime is really reachable and whether the model was pulled, because a silent fallback is an invisible one. See [local LLM setup](docs/LOCAL_LLM_INTENT.md).
 - **Differentially private escalation**: a request outside local capability is de-identified and token-level DP perturbed by `fl/text_dp.py`, charged to the account's lifetime privacy ledger, and only then sent to the global model. The perturbed prompt, the changed words and the ε charge are shown in the reply.
 - **Reviewable change reports**: each understood request returns a field-by-field change list plus a correctness check ("no time was found", "the parsed time is in the past"), and nothing is written until the review is confirmed.
 - Optional OpenAI adapter (Global mode) and loopback Ollama adapter (local conversation). No cloud keys are shipped or exposed to the browser.
@@ -17,6 +18,8 @@ A login-first Angular workspace with a real FastAPI backend, encrypted calendar/
 - A separately trained, bundled seven-label SNIPS ONNX benchmark: 97.86% validation accuracy on 700 examples; public central training, not a private FL/DP result.
 - Append-only, SHA-256 chained and HMAC-authenticated audit records, with a verification UI.
 - Real independent client OS workers, pairwise X25519/HKDF/ChaCha20 masks and all-participant aggregation.
+- **Two federated stages behind one switch**: `LEARNING_STAGE=softmax` federates the full 645-weight shared matrix; `LEARNING_STAGE=lora` freezes it and federates a rank-*r* adapter (LoRA), releasing `r × labels` numbers per client instead. Same ε, δ, clip, ledger, masking, gate and serving path — but measured over 200 simulated rounds the merged noise norm falls from 31.5 to 5.5 and publication from 0% to 98%, matching the predicted `sqrt(20/645)`. Reproduce with `scripts/measure_dp_stages.py`.
+- `scripts/fake_ollama.py`: a clearly-labelled **simulator** of the loopback runtime, so the LLM path, a federated round and the DP release can be demonstrated and tested with no model downloaded. It is a deterministic keyword classifier, not a language model, and says so in the UI.
 - Client-local Gaussian noise, L2 clipping, persistent **conservative sequential** privacy accounting, minimum-cohort enforcement and guarded model publication.
 - Light/dark themes, robot branding, accessible forms, settings and reduced-motion controls.
 
@@ -77,7 +80,9 @@ See [push setup, assistant commands and model provenance](docs/NOTIFICATIONS_AND
 ### How a request is routed
 
 1. **Read tolerantly, offline.** `app/normalizer.py` fixes recognised domain misspellings (`remindar` → reminder, `calender` → calendar, `tomorow` → tomorrow) and rewrites spoken numbers in time and duration phrases (`at seven thirty pm` → `at 7:30 pm`, `half past eight` → `8:30`, `in twenty minutes` → `in 20 minutes`). Proper nouns are never guessed at, and every rewrite is reported back so you can see what was understood.
-2. **Classify locally.** The active shared ONNX intent model labels the request and produces token-occlusion evidence. If the operator has configured a loopback Ollama runtime, `app/llm_intent.py` also asks that local LLM for a constrained label, and its reading outranks the softmax model — which was measured guessing confidently on out-of-domain text (`"what is the capital of France"` → calendar 0.68, `"thanks"` → calendar 0.56). The LLM path is strictly additive: no runtime, a non-loopback URL, a transport failure, a timeout, unparseable output or an unknown label all fall back to the softmax model silently. Neither model ever executes a tool, and a message that looks like an instruction-override attempt (`ignore previous instructions…`) disqualifies the LLM label entirely.
+2. **Classify locally.** The active shared ONNX intent model labels the request and produces token-occlusion evidence. If the operator has configured a loopback Ollama runtime, `app/llm_intent.py` also asks that local LLM for a constrained label, and its reading outranks the softmax model — which was measured guessing confidently on out-of-domain text (`"what is the capital of France"` → calendar 0.68, `"thanks"` → calendar 0.56).
+   The LLM label is then **executed, not just displayed**: when deterministic parsing found no task, the adopted label decides which review dialog is prepared, and the response says so (`intent_source`, `llm_intent_used`). Adoption is bounded — never for `summary`, never without category consent, never past the injection screen, and never into a write.
+   The LLM path stays strictly additive underneath: no runtime, a non-loopback URL, a transport failure, a timeout, unparseable output or an unknown label all fall back to the softmax model silently, and `llm_intent.probe()` reports which of those happened. Neither model ever executes a tool.
 3. **Decide capability.** `app/capability.py` asks whether this deployment can do the work: calendar/reminder/note create-update-delete-list, the configured local summariser, deterministic greetings, or general chat when a loopback Ollama runtime is configured. Deterministic evidence outranks the classifier, because the bundled 128-feature model confidently labels out-of-domain questions as tasks (measured: "what is the capital of France" → calendar 0.68).
 4. **Escalate only when it cannot, and only privately.** If the work is out of scope, `fl/text_dp.py` first redacts e-mail addresses, URLs, phone-like numbers and credentials, replaces words outside the committed public vocabulary with `[redacted]`, then applies k-ary randomised response to the remaining content words. Only that release is transmitted — never the raw prompt, prior conversation or workspace records. The reply shows the exact prompt sent, which words changed, and the ε charged.
 5. **Show the changes for checking.** Understood tasks return a change list (Action / Title / When, or before → after for edits) and a correctness check with warnings. Confirming the review is what writes the record; the confirmation message then restates what was stored.
@@ -99,14 +104,14 @@ For broader local conversation **and markedly better intent classification**, ru
 1. Each of **three actual participating accounts** explicitly enables learning and saves settings.
 2. Each contributes at least **three confirmed intent examples** using “Correct intent → Confirm label & contribute”, or by reviewing/saving assistant-generated task drafts after opting in.
 3. The single pipeline automatically checks eligibility every ten seconds (or on a queued example/settings change). It never fabricates participants.
-4. Encrypted queues are supplied to separate client subprocesses. Each trains a small softmax model locally, clips its delta, adds its own Gaussian noise, quantises and masks it. Only masked vectors are returned to the supervisor.
+4. Encrypted queues are supplied to separate client subprocesses. Each trains locally — the full shared matrix in the `softmax` stage, or a rank-*r* adapter over a frozen base in the `lora` stage — then clips its delta, adds its own Gaussian noise, quantises and masks it. Only masked vectors are returned to the supervisor. A draft the local LLM classified carries `source: "local-llm"` inside its ciphertext, so the provenance of a training label is preserved without exposing it.
 5. All participants must finish. Any timeout, dropout, malformed update or preference-version change aborts before aggregation/publication. Every reservation stays charged to avoid retry accounting loopholes.
 6. The shared candidate is tested against the public seed regression set. It is activated only if the gate passes; otherwise the previous model stays active. This score is **not a held-out accuracy benchmark**.
 7. Consumed encrypted examples are removed after the attempt; the ledger and audit remain. Future local predictions use the active shared version through ONNX Runtime.
 
 Privacy parameters: client replacement adjacency, clipping norm `0.1`, per-attempt ε `0.5`, δ `1e-6`, lifetime δ cap `1e-5`, user epsilon target `1–10`. No sampling amplification is claimed. Setting a lower target cannot undo past expenditure. Opt-out removes unused examples; changes during a running round conservatively abort it. The client/account protection unit does not automatically cover a person across multiple accounts/devices.
 
-This updates the shared **assistant intent model**, not a third-party conversational LLM. Strong local DP at small cohort sizes often destroys utility; rejection is a valid, honest outcome.
+This updates the shared **assistant intent model**, not a third-party conversational LLM. Strong local DP at small cohort sizes often destroys utility; rejection is a valid, honest outcome. The adapter stage is the one lever that improves it without spending more ε, because it shrinks the released dimension rather than the noise per coordinate — and at ε=0.5 with three clients even a *published* adapter is still noise-dominated, which `/api/v1/learning/status` states in `stage_detail.note` rather than leaving to the docs. Both stages publish into `model_versions`, so serving and the browser cannot tell them apart; `lora_adapters` keeps the lineage, including rejected candidates, because their budget was spent. Full walkthrough, model choices, verification steps and troubleshooting: [docs/LOCAL_LLM_INTENT.md](docs/LOCAL_LLM_INTENT.md).
 
 ## Verification
 
@@ -122,19 +127,21 @@ npm run test:assets
 
 Additional tests cover local-first routing (supported tasks never escalate), DP escalation release and ledger accounting, budget exhaustion, Privacy/consent/sensitive refusals, spoken-number and misspelling handling, change-list correctness, reviewed assistant CRUD, ambiguous/foreign targets, stale-edit and timezone safeguards, due-time dispatch, retry/recovery, cancellation and encrypted push subscriptions. The browser smoke exercises service-worker registration plus mocked permission/subscription APIs, not actual vendor-to-device delivery. SNIPS training/export is tested with an offline fixture; its actual public-data report is bundled in `models/snips/metrics.json`.
 
-Backend tests cover auth, cookie/CSRF/origin enforcement, password policy, IDOR checks, ciphertext/AAD, append-only audit and privacy ledger, ONNX serving, local/cloud boundaries, clipping/noise, pairwise cancellation, real three-process training, dropout abort and persistent accounting.
+Backend tests cover auth, cookie/CSRF/origin enforcement, password policy, IDOR checks, ciphertext/AAD, append-only audit and privacy ledger, ONNX serving, local/cloud boundaries, clipping/noise, pairwise cancellation, real three-process training, dropout abort and persistent accounting. They also cover the LLM path end to end against a real subprocess runtime (`tests/test_llm_task_routing.py`: label adoption, deterministic precedence, consent gating, injection discard, probe reporting) and the adapter stage (`tests/test_lora_fl.py`: projection determinism, frozen base, the measured noise-dimension ratio, a real three-process round, wrong-dimension rejection, dropout, mid-round revocation and gate rejection).
 
 The Linux browser smoke test launches its **own isolated database, secrets, backend and static server** (backend port 8011), then exercises real registration, persistence, assistant drafts, summaries, learning opt-in, audit, logout/login, themes and mobile layout. It does not modify the live workspace or call a paid provider. Provider integration is mocked in unit tests; a live cloud call requires operator configuration and explicit consent.
 
 ## Repository map
 
 - `app/`: FastAPI APIs, crypto, schemas, storage, ONNX/local inference, consent, `normalizer.py` (tolerant reading) and `capability.py` (local-first routing).
-- `fl/`: client workers, Gaussian mechanism, masking protocol, integrated supervisor, `text_dp.py` (escalation prompt DP) and the committed `public_vocabulary.txt`.
+- `fl/`: client workers, Gaussian mechanism, masking protocol, integrated supervisor, `text_dp.py` (escalation prompt DP), the committed `public_vocabulary.txt`, and `fl/lora/` (the adapter stage: public projection, local adapter training, worker and supervisor).
 - `migrations/`: Alembic schema plus append-only triggers.
 - `frontend/`: Angular workspace and browser smoke test.
 - `tests/`: isolated backend/security/protocol tests.
 - `docs/PRD.md`: product specification and implementation delta.
 - `docs/SECURITY_AND_DP.md`: threat model, accounting contract and limitations.
+- `docs/LOCAL_LLM_INTENT.md`: local LLM setup, verification, the two federated stages, the offline simulator and troubleshooting.
+- `scripts/`: environment and VAPID initialisation, DP vocabulary build, SNIPS training, `measure_dp_stages.py` (stage noise/utility measurement) and `fake_ollama.py` (labelled simulator).
 - `frontend/public/brand/`: robot SVG mark, light/dark wordmarks and mascot.
 
 No third-party security audit, external audit-chain anchoring, email verification/reset, hardware keystore, poisoning defenses or physical-device FL enrollment is provided in this release.

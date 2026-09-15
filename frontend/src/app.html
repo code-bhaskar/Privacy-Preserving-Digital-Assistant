@@ -570,6 +570,23 @@
                               · local LLM read “{{ message.llm_intent }}”
                             }
                           </p>
+                          <p>
+                            Task selected by:
+                            {{
+                              message.intent_source === "local-llm"
+                                ? "the local LLM’s reading of your message"
+                                : message.intent_source === "deterministic"
+                                  ? "deterministic parsing of your message"
+                                  : "no task evidence · answered as conversation"
+                            }}
+                            @if (
+                              message.llm_intent &&
+                              message.llm_intent_used === null
+                            ) {
+                              · the LLM label was discarded: this message looks
+                              like an attempt to steer the classifier
+                            }
+                          </p>
                           @for (term of message.explanation; track $index) {
                             <span class="token-chip"
                               >{{ term.token }}
@@ -973,8 +990,6 @@
                     ? "provider configured"
                     : "not configured"
                 }}
-                · Local LLM:
-                {{ runtime?.local_llm ? "configured" : "task model only" }}
               </p>
               <p>
                 Intent decided by:
@@ -983,6 +998,23 @@
                     "ONNX Runtime · 128-feature softmax intent model"
                 }}
               </p>
+              <p>
+                Local LLM runtime: {{ runtime?.llm_runtime?.detail }}
+              </p>
+              <p>
+                Federated stage:
+                {{ learning?.learning_stage || runtime?.learning_stage }} ·
+                {{ learning?.stage_detail?.parameterisation }}
+                <br />
+                Released per client:
+                {{ learning?.stage_detail?.released_coordinates }} coordinates ·
+                clip {{ learning?.stage_detail?.clip_norm }} · ε
+                {{ learning?.stage_detail?.epsilon_per_round }} per round ·
+                Gaussian σ
+                {{ learning?.stage_detail?.noise_per_coordinate?.toFixed(2) }}
+                per coordinate
+              </p>
+              <p class="muted">{{ learning?.stage_detail?.note }}</p>
               <button
                 class="outline"
                 (click)="runLearning()"
@@ -992,7 +1024,12 @@
               </button>
               @for (round of learning?.history; track round.id) {
                 <article class="round-row">
-                  <strong>Round {{ round.id }} · {{ round.status }}</strong>
+                  <strong
+                    >Round {{ round.id }} · {{ round.status }}
+                    @if (round.stage) {
+                      · {{ round.stage }}
+                    }</strong
+                  >
                   <p>{{ round.detail }}</p>
                 </article>
               } @empty {

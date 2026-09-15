@@ -41,9 +41,23 @@ def sigma(epsilon, delta, sensitivity):
     return 1.01 * sensitivity * math.sqrt(2 * math.log(1.25 / delta)) / epsilon
 
 
-def privatize(delta, epsilon=EPSILON_PER_ROUND, privacy_delta=DELTA_PER_ROUND):
-    bounded = clip(delta)
-    std = sigma(epsilon, privacy_delta, 2 * CLIP_NORM)
+def privatize(
+    delta,
+    epsilon=EPSILON_PER_ROUND,
+    privacy_delta=DELTA_PER_ROUND,
+    clip_norm=CLIP_NORM,
+):
+    """Clip, then add Gaussian noise calibrated to the clipped sensitivity.
+
+    `clip_norm` is a parameter because the low-rank stage (`fl/lora`) releases a
+    much shorter vector and may choose a different clip. The guarantee is
+    unchanged provided the noise is calibrated to the same constant used for
+    clipping, which is what `sigma(..., 2 * clip_norm)` enforces here.
+    """
+    if not 0 < float(clip_norm):
+        raise ValueError("Clip norm must be positive")
+    bounded = clip(delta, clip_norm)
+    std = sigma(epsilon, privacy_delta, 2 * clip_norm)
     rng = secrets.SystemRandom()
     noise = np.array(
         [rng.normalvariate(0.0, std) for _ in range(bounded.size)]

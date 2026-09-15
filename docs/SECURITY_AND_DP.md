@@ -26,6 +26,33 @@ For each round, three real opted-in account queues are selected. Each needs at l
 
 There are no self masks, Shamir shares, remote client enrollment, Byzantine filtering, malicious-server consistency proofs or dropout recovery. **Any missing member aborts the entire round.** The code never exposes recovery keys. Private OS pipes bind the messages to the worker processes started by the supervisor; this is not a distributed-network authentication scheme.
 
+**Two stages share that protocol.** `LEARNING_STAGE` selects which object is
+federated, and nothing else about the round changes:
+
+| | `softmax` (default) | `lora` |
+|---|---|---|
+| Released per client | the full delta over `(F+1)×L` = 645 weights | a rank-`r` adapter, `r×L` = 20 numbers at `r=4` |
+| Base weights | moved by the aggregate | frozen; the adapter is merged only if the gate passes |
+| ε, δ per round | 0.5, 10⁻⁶ | 0.5, 10⁻⁶ (identical ledger charge) |
+| Clip norm `C` | 0.1 | `LORA_CLIP_NORM`, default 0.1 |
+| Masking, cohort, consent re-check, gate, publication table | the same code | the same code |
+
+The adapter stage releases fewer coordinates, and the Gaussian mechanism noises
+each released coordinate, so less noise reaches the served model: measured over
+200 simulated rounds at the shipped defaults, the merged perturbation norm is
+31.5 for the full matrix against 5.5 for a rank-4 adapter, a ratio of 0.174 that
+tracks the predicted `sqrt(20/645) = 0.176`. Publication rates in the same
+simulation were 0% and 98%. Reproduce with
+`scripts/measure_dp_stages.py`; `tests/test_lora_fl.py` pins the ratio. This is a
+utility difference at identical privacy cost, **not** a stronger guarantee, and
+not an accuracy claim: at ε=0.5 with three clients a published adapter is still
+noise-dominated, and the gate asks only whether the served model broke.
+
+The projection `A` (shape `(F+1, r)`) is public and derived from a committed seed
+by hashing, so clients and server agree on it without transmitting it and it
+cannot drift between NumPy versions. Raising the rank extends `A` rather than
+reshuffling it, so an adapter published at rank `r` remains meaningful at `r+1`.
+
 A database transaction reserves budgets and marks examples used before workers start. A process-level file lock rejects a second backend against the same SQLite database. Transactions use BEGIN IMMEDIATE to serialize audit tails, eligibility checks and reservations. Restart marks interrupted rounds aborted without refunding expenditure. Every preference save increments a server-controlled version; a mismatch before aggregate release aborts that round. Revoking a local data category purges all unused queued examples conservatively. Used examples are deleted after the attempt or during restart recovery.
 
 ## Differential privacy contract
@@ -34,7 +61,12 @@ A database transaction reserves budgets and marks examples used before workers s
 
 Adjacency replaces one client's complete local training dataset, for a fixed public participation/cohort transcript. Participation itself, sample availability, enrollment timing and the existence of a user account are not protected by this guarantee. One person with several accounts is not automatically one protected unit. Do not interpret this as user anonymity or participation-hiding DP.
 
-For a model delta Δ, clip to `clip(Δ, C)` with `C=0.1`. Two clipped deltas differ by at most `2C` in L2. Each worker adds independent Gaussian noise with standard deviation
+For a model delta Δ, clip to `clip(Δ, C)` with `C=0.1` in the default stage and
+`C=LORA_CLIP_NORM` in the adapter stage. `C` is a parameter of the mechanism, not
+a constant, and the noise is always calibrated to the same `C` that was used for
+clipping; changing one without the other would break the sensitivity bound, which
+is why both are validated at startup (`Settings.lora_parameters`). Two clipped
+deltas differ by at most `2C` in L2. Each worker adds independent Gaussian noise with standard deviation
 
 ```
 sigma = 1.01 × (2C) × sqrt(2 ln(1.25 / delta_round)) / epsilon_round
@@ -42,7 +74,7 @@ sigma = 1.01 × (2C) × sqrt(2 ln(1.25 / delta_round)) / epsilon_round
 
 The sufficient classical Gaussian bound (Dwork & Roth, The Algorithmic Foundations of Differential Privacy, Theorem A.1) is used only for `0 < epsilon_round <= 1`. Current constants are ε_round=0.5 and δ_round=10^-6. There is no subsampling amplification claim and no dependence on other clients honestly adding their noise for this local mechanism. Clipping/noise are applied to the whole client update, not to individual example gradients.
 
-Each participant independently perturbs its update before aggregation, so losing participants does not silently reduce an assumed distributed noise total. The separate masking protocol still aborts on dropout for confidentiality/correctness. This local-DP design imposes substantially greater noise than central-DP secure aggregation and will often reject candidates at this small scale.
+Each participant independently perturbs its update before aggregation, so losing participants does not silently reduce an assumed distributed noise total. The separate masking protocol still aborts on dropout for confidentiality/correctness. This local-DP design imposes substantially greater noise than central-DP secure aggregation and will often reject candidates at this small scale. The adapter stage reduces the *dimension* of the release, which is the one lever that improves the merged signal-to-noise ratio without spending more ε: raising the clip raises signal and noise together and leaves the ratio unchanged, while a larger cohort divides the noise by `sqrt(n)`.
 
 Quantisation uses scale 100,000 and saturates each already-noised vector to ±floor((2^30−1)/n) before conversion to uint32. This is deterministic post-processing of each local DP output and avoids signed overflow of the aggregate sum under the supported cohort bound. It is not correct to say that any quantisation automatically destroys DP. The exact finite-precision sampling and arithmetic implementation nevertheless need security review.
 
@@ -57,23 +89,50 @@ Candidate quality scores and publication/rejection decisions use the noised aggr
 When `OLLAMA_URL`/`OLLAMA_MODEL` are configured, `app/llm_intent.py` asks that
 loopback runtime for a label from a fixed set
 (`calendar|reminder|note|summary|chat|out_of_scope`) with `format: json` and
-`temperature: 0`. Its reading outranks the bundled 128-feature softmax, but the
-trust boundary is deliberately narrow:
+`temperature: 0`. Its reading outranks the bundled 128-feature softmax **and is
+the task that gets executed**: when deterministic parsing finds no task, the
+adopted label decides which review dialog is prepared, so a paraphrase such as
+"ping me about the dentist visit" becomes a reminder draft instead of small talk.
+The response reports this as `intent_source: "local-llm"`. The trust boundary is
+still deliberately narrow:
 
 - **Loopback only.** A non-loopback URL is refused before any request is made, so
   intent classification can never leave the host even if misconfigured.
 - **Fixed output space.** A label outside the set, an unparseable body, a
   transport error or a timeout all return `None` and the softmax label stands.
   Nothing is coerced into a valid-looking label.
-- **Advisory, never authoritative.** Deterministic task evidence still wins, and
-  no label writes a record: create/update/delete still require the review dialog
-  and confirmation against an item version hash.
+- **Never authoritative, never a write.** Deterministic task evidence still wins
+  (a record ID, an explicit `Summarize:` prefix, a workspace keyword), and no
+  label writes a record: create/update/delete still require the review dialog and
+  confirmation against an item version hash. A misread therefore costs the user a
+  draft they dismiss, not a change to their data.
+- **`summary` is never adopted.** Summarisation needs source text after
+  `Summarize:`, which only the deterministic signal guarantees, so an LLM label
+  cannot invent a summary request.
+- **Category consent gates adoption.** If the label's category is not consented,
+  the message is answered as conversation and the reply says so, rather than
+  turning a guessed label into a 403.
+- **Screened for execution too.** The same instruction-override screen that
+  disqualifies the label for routing disqualifies it for the executed task
+  (`capability.screened_llm_label` is the single source of truth), and the
+  response reports `llm_intent_used: null` so the discard is visible.
+- **Observable.** A silent fallback is an invisible one, so
+  `llm_intent.probe()` reports whether the runtime is reachable, whether the
+  configured model has actually been pulled, and which models are available.
+  `/api/v1/runtime` surfaces it; the probe is cached for 30 s, bounded at 3 s and
+  never raises.
 - **Injection screened.** A message matching an instruction-override pattern
   disqualifies the LLM label, because a model reading the user's own text can be
   steered by it. The screen is a heuristic, not a proof; the confirmation step is
   what actually bounds the damage.
 
 Cost: one extra loopback inference per message when a runtime is configured.
+
+`scripts/fake_ollama.py` is a **simulator** that speaks the same loopback API for
+demos and tests. It is a deterministic keyword classifier with no weights and no
+generalisation. It advertises a model name in the `simulated-` family, which
+`probe()` and `engine_label()` report as a simulator, so a settings page or a
+screenshot cannot present it as a language model result.
 
 ## Prompt escalation accounting
 
@@ -126,7 +185,9 @@ refusal degrades to a local explanation; in explicit Global mode it returns
 
 ## Model release
 
-The shared candidate is the old public model plus the averaged protected aggregate. It must be finite, dimension compatible and pass the public-seed regression gate (at least 0.75 and no more than 0.025 below the previous model). Rejected candidates are not activated or persisted as individual vectors. This gate is a safety regression check, **not a held-out benchmark** or poisoning defense.
+The shared candidate is the old public model plus the averaged protected aggregate. In the adapter stage the candidate is `W0 + A @ B̄`, where `B̄` is the averaged protected adapter and the merge is deterministic post-processing of an already-private release. Either way it must be finite, dimension compatible and pass the public-seed regression gate (at least 0.75 and no more than 0.025 below the previous model). Rejected candidates are not activated or persisted as individual vectors. This gate is a safety regression check, **not a held-out benchmark** or poisoning defense.
+
+An accepted adapter is merged into a new `model_versions` row, so the ONNX serving path, the API and the browser are unchanged by which stage ran; the adapter itself is also recorded in `lora_adapters` with its base model, merged model, gate score and acceptance flag. A **rejected** adapter keeps its row with `accepted = false` and no merged model, because the budget for it was spent and the refusal must stay auditable. Adapter rows hold the aggregated, already-noised vector and no example text. Rounds carry a `stage` column so one history tail shows which mechanism produced each round.
 
 ONNX graphs are regenerated in memory from validated dimensions for the active version. No arbitrary downloaded ONNX file replaces the assistant model. The external OpenAI LLM is a separate service and is not trained by this pipeline.
 
