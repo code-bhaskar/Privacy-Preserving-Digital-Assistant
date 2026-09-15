@@ -32,9 +32,10 @@ def expenditure(conn, uid):
     return float(values[0]), float(values[1])
 
 
-def affordable(conn, user):
-    epsilon, delta = expenditure(conn, user["id"])
+def affordable(conn, user, epsilon=EPSILON_PER_ROUND, delta=DELTA_PER_ROUND):
+    """Can this account pay for one more release of the given cost?"""
+    spent_epsilon, spent_delta = expenditure(conn, user["id"])
     return (
-        epsilon + EPSILON_PER_ROUND <= prefs(user)["epsilon"] + 1e-12
-        and delta + DELTA_PER_ROUND <= DELTA_CAP + 1e-12
+        spent_epsilon + epsilon <= prefs(user)["epsilon"] + 1e-12
+        and spent_delta + delta <= DELTA_CAP + 1e-12
     )

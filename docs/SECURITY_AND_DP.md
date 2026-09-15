@@ -52,6 +52,55 @@ The sampler uses OS-backed randomness through Python SystemRandom.normalvariate,
 
 Candidate quality scores and publication/rejection decisions use the noised aggregate and public seed data, so they are post-processing of the protected updates. The release does not report raw local training accuracy, losses, gradient norms or private-data-dependent clipping calibration.
 
+## Prompt escalation accounting
+
+Out-of-capability requests may be released to the global model. That release is a
+different mechanism from the training-round Gaussian mechanism above, and it is
+accounted separately.
+
+**Mechanism.** `fl/text_dp.py` first applies deterministic de-identification
+(e-mail addresses, URLs, phone-like and long digit runs, IP addresses,
+`key: value` credentials). Words outside the committed public vocabulary
+(`fl/public_vocabulary.txt`, rebuilt from this repository's public documentation
+by `scripts/build_public_vocabulary.py`) are replaced by `[redacted]`, because
+the mechanism cannot preserve a symbol outside its output space; rare words and
+proper nouns therefore disappear. Remaining content words go through k-ary
+randomised response over that vocabulary: the true word is emitted with
+probability `e^ε / (e^ε + k - 1)`, otherwise a uniformly random different
+vocabulary word. Function words are passed through verbatim as a documented
+utility choice, so sentence shape and word order are **not** protected. Because
+the output space is derived from this repository's public documentation, a word
+that appears in that documentation is preservable by the mechanism; that is a
+property of any public vocabulary, not a leak of user data. Regenerating the list
+changes `k` and therefore the retention probability, which is why the asset
+carries a SHA-256 digest and `scripts/build_public_vocabulary.py --check`
+verifies it.
+
+**What is guaranteed.** Each protected token's release is `ε_token`-LDP. The
+default `ESCALATION_TOKEN_EPSILON=10` with the 2,824-word public vocabulary
+retains about 89% of protected words. **This is a per-token statement.** Under
+basic sequential composition a prompt with `n` protected tokens is at most
+`n × ε_token`-private; the API returns that bound as `composition_bound` and the
+UI displays it. It is not enforced as a cap, and it must not be quoted as the
+prompt's epsilon. The provider's reply is not a DP release at all. Most of the
+practical protection here comes from redaction, not from the noise.
+
+**Ledger.** Each *successful* escalation charges the account
+`EPSILON_ESCALATION = 0.25` and `DELTA_ESCALATION = 0` (k-RR is pure ε-DP, so no
+δ is invented). Escalation rows carry `round_id = NULL`, which migration `0003`
+permits; the append-only triggers are reinstated by that migration. This charge
+is a **policy budget on the number of escalated releases** an account may make —
+with the default ε target of 3.0, twelve escalations. It is deliberately *not*
+the composed text-DP loss, and the two numbers must not be conflated. A failed
+provider call is not charged, because nothing was published; a blocked escalation
+is never charged.
+
+**Refusals.** Escalation does not happen in Privacy mode, without cloud consent,
+without a configured provider, when the sensitive-keyword guard matches in
+Default mode, or when the budget cannot cover the release. In Default mode a
+refusal degrades to a local explanation; in explicit Global mode it returns
+403/503/428 so an operator misconfiguration is not hidden behind a local answer.
+
 ## Model release
 
 The shared candidate is the old public model plus the averaged protected aggregate. It must be finite, dimension compatible and pass the public-seed regression gate (at least 0.75 and no more than 0.025 below the previous model). Rejected candidates are not activated or persisted as individual vectors. This gate is a safety regression check, **not a held-out benchmark** or poisoning defense.

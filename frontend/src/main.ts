@@ -11,6 +11,9 @@ import {
   intentForRobot,
   robotForBackendIntent,
   modeRobot,
+  routeRobot,
+  routeMode,
+  routeName,
   ROBOT_FRAMES,
   RobotIntent,
   RobotPhase,
@@ -83,11 +86,59 @@ type Proposal = {
   version?: string;
   done?: boolean;
 };
+type Change = {
+  field: string;
+  before: string | boolean | null;
+  after: string | boolean | null;
+  changed?: boolean;
+};
+type Check = {
+  ok: boolean;
+  summary: string;
+  notes: string[];
+  warnings: string[];
+};
+type Privacy = {
+  applied: boolean;
+  mechanism: string;
+  epsilon_token: number;
+  retention_probability: number;
+  vocabulary_size: number;
+  protected_tokens: number;
+  composition_bound: number;
+  redactions: { type: string; count: number }[];
+  perturbed: { from: string; to: string }[];
+  sent_prompt: string;
+  epsilon_charged: number;
+  epsilon_spent: number;
+  epsilon_target: number;
+  notice: string;
+};
 type Message = {
   robotMode?: string;
   role: string;
   text: string;
   location?: string;
+  route?: "local" | "global";
+  router?: {
+    capable: boolean;
+    capability: string;
+    reason: string;
+    evidence: string;
+    signals: string[];
+    policy: string;
+    outcome: string;
+  };
+  normalized?: {
+    text: string;
+    corrections: { from: string; to: string; kind: string }[];
+    rewrites: { from: string; to: string; kind: string }[];
+    notes: string[];
+    changed: boolean;
+  };
+  privacy?: Privacy;
+  changes?: Change[];
+  check?: Check;
   proposal?: Proposal;
   source?: string;
   intent?: string;
@@ -186,6 +237,12 @@ class App {
   settingsBusy = false;
   private previousFocus: HTMLElement | null = null;
   robotState = "Ready when you are";
+  /** Where the last answer actually came from; drives the robot artwork. */
+  activeRoute: "local" | "global" = "local";
+  routeName = routeName;
+  get robotRouteMode(): string {
+    return routeMode(this.activeRoute, this.mode);
+  }
   robotIntent: RobotIntent = "idle";
   robotPhase: RobotPhase = "idle";
   private robotReset: ReturnType<typeof setTimeout> | undefined;
@@ -231,13 +288,21 @@ class App {
   }
   messageRobot(message: Message) {
     const intent = robotForBackendIntent(message.intent);
+    const base = routeRobot(message.route, message.robotMode || "Default");
+    // A released prompt is answered by the provider: show the global robot.
+    if (message.route === "global") return base;
     if (
       message.location === "local backend" &&
       intent !== "idle" &&
       !message.text.startsWith("Please include the text")
     )
       return ROBOT_FRAMES[intent][intent === "summarizer" ? 4 : 3];
-    return modeRobot(message.robotMode || "Default");
+    return base;
+  }
+  changedRows(message: Message): Change[] {
+    return (message.changes || []).filter(
+      (change) => change.before !== change.after,
+    );
   }
 
   busy = false;
@@ -481,14 +546,11 @@ class App {
             : "Listening",
     );
     try {
-      const result = await this.api<{
-        text: string;
-        location: string;
-        proposal: Proposal;
-        intent: string;
-        confidence: number;
-        explanation: { token: string; contribution: number }[];
-      }>("/assistant/command", "POST", { text, mode: requestMode });
+      const result = await this.api<Omit<Message, "role" | "source">>(
+        "/assistant/command",
+        "POST",
+        { text, mode: requestMode },
+      );
       if (generation !== this.generation) return;
       this.messages.push({
         role: "assistant",
@@ -496,9 +558,22 @@ class App {
         source: text,
         robotMode: requestMode,
       });
+      // The robot follows the model that actually answered, not the selector.
+      this.activeRoute = result.route === "global" ? "global" : "local";
       const actual = robotForBackendIntent(result.intent);
-      if (result.location !== "local backend")
-        this.setRobot("idle", "idle", "Response ready");
+      if (result.route === "global")
+        this.setRobot(
+          "idle",
+          "idle",
+          "Global model answered · private release spent ε " +
+            (result.privacy?.epsilon_charged ?? 0).toFixed(2),
+        );
+      else if (result.router?.outcome === "blocked")
+        this.setRobot(
+          visual,
+          "error",
+          "Needs the global model · nothing sent",
+        );
       else if (actual === "summarizer") {
         if (result.text.startsWith("Please include the text"))
           this.setRobot(actual, "error", "Add the text you want summarised");
@@ -516,6 +591,7 @@ class App {
       else this.setRobot("idle", "idle", "Ready when you are");
     } catch (e) {
       if (generation === this.generation) {
+        this.activeRoute = "local";
         this.setRobot(visual, "error", "Couldn’t finish · nothing confirmed");
         this.messages.push({
           role: "assistant",
@@ -553,6 +629,11 @@ class App {
     this.itemDetail = message.proposal.detail;
     this.learningText =
       p.operation === "create" || !p.operation ? message.source : undefined;
+    // Assigned after openItem(), which clears the dialog state for manual adds.
+    this.reviewChanges = message.changes || [];
+    this.reviewCheck = message.check || null;
+    this.reviewNotes = message.normalized?.notes || [];
+    this.cdr.markForCheck();
   }
   async teach(message: Message) {
     try {
@@ -567,8 +648,14 @@ class App {
       this.notify(this.error(e));
     }
   }
+  reviewChanges: Change[] = [];
+  reviewCheck: Check | null = null;
+  reviewNotes: string[] = [];
   openItem(item?: Item) {
     this.previousFocus = document.activeElement as HTMLElement;
+    this.reviewChanges = [];
+    this.reviewCheck = null;
+    this.reviewNotes = [];
     this.editingId = item?.id ?? null;
     this.editingVersion = item?.version;
     this.editingDone = item?.done ?? false;
@@ -635,12 +722,13 @@ class App {
       "Saving your changes…",
     );
     const kind = this.tab;
+    const edited = this.editingId !== null;
+    const title = this.itemTitle;
+    const detail = this.itemDetail;
     try {
       await this.api(
-        "/entries/" +
-          kind +
-          (this.editingId !== null ? "/" + this.editingId : ""),
-        this.editingId !== null ? "PUT" : "POST",
+        "/entries/" + kind + (edited ? "/" + this.editingId : ""),
+        edited ? "PUT" : "POST",
         {
           title: this.itemTitle,
           detail: this.itemDetail,
@@ -653,6 +741,7 @@ class App {
       );
       this.saving = false;
       this.closeItem();
+      this.confirmSaved(kind, edited ? "updated" : "created", title, detail);
       this.robotSucceeded(
         kind === "Calendar" ? "calendar" : "reminder",
         kind === "Calendar"
@@ -661,7 +750,13 @@ class App {
             ? "Reminder saved"
             : "Note saved",
       );
-      this.notify("Saved with AES-256-GCM encryption.");
+      // Saving lands on the workspace tab, so restate the change there too.
+      this.notify(
+        "Change applied: " +
+          this.describeChange(kind, edited ? "updated" : "created", title, detail)
+            .sentence +
+          " · AES-256-GCM encrypted.",
+      );
       await this.loadItems();
       await this.poll();
     } catch (e) {
@@ -675,6 +770,65 @@ class App {
       this.saving = false;
       this.cdr.markForCheck();
     }
+  }
+  private describeChange(
+    kind: string,
+    verb: "created" | "updated" | "deleted",
+    title: string,
+    detail: string,
+  ) {
+    const noun =
+      kind === "Calendar"
+        ? "calendar event"
+        : kind === "Reminders"
+          ? "reminder"
+          : "note";
+    const when =
+      kind !== "Notes" && /^\d{4}-\d{2}-\d{2}T/.test(detail)
+        ? new Date(detail).toLocaleString(undefined, {
+            weekday: "short",
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "";
+    return {
+      noun,
+      when,
+      sentence:
+        `${verb} ${noun} “${title}”` + (when ? ` for ${when}` : ""),
+    };
+  }
+  /** State plainly what was written, so the user can check it afterwards. */
+  confirmSaved(
+    kind: string,
+    verb: "created" | "updated" | "deleted",
+    title: string,
+    detail: string,
+  ) {
+    const { noun, when, sentence } = this.describeChange(kind, verb, title, detail);
+    this.messages.push({
+      role: "assistant",
+      route: "local",
+      location: "local backend",
+      text:
+        `Change applied: ${sentence}` +
+        (when ? ` (${this.timezone}).` : ".") +
+        " Stored encrypted on this backend.",
+      changes: [
+        { field: "Action", before: null, after: `${verb} ${noun}` },
+        { field: "Title", before: null, after: title },
+        ...(when ? [{ field: "When", before: null, after: when }] : []),
+      ],
+      check: {
+        ok: true,
+        summary: "Written to your workspace. Undo by editing or deleting it.",
+        notes: [],
+        warnings: [],
+      },
+    });
+    this.cdr.markForCheck();
   }
   async toggleDone(item: Item) {
     try {
@@ -713,6 +867,8 @@ class App {
     if (this.editingId === null || this.saving) return;
     this.saving = true;
     const kind = this.tab;
+    const title = this.itemTitle;
+    const detail = this.itemDetail;
     try {
       await this.api(
         "/entries/" + kind + "/" + this.editingId,
@@ -722,6 +878,7 @@ class App {
       );
       this.saving = false;
       this.closeItem();
+      this.confirmSaved(kind, "deleted", title, detail);
       this.robotSucceeded(
         kind === "Calendar" ? "calendar" : "reminder",
         "Item deleted",

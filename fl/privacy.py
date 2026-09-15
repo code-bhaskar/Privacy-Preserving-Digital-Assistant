@@ -17,6 +17,17 @@ DELTA_CAP = 1e-5
 CLIP_NORM = 0.1
 SCALE = 100_000
 
+# Escalating an out-of-capability prompt to the global model is a separate
+# release from a training round. k-RR (fl/text_dp.py) is pure epsilon-DP, so
+# delta is 0 rather than an assumed 1e-6: charging a nonzero delta here would be
+# conservative bookkeeping for a mechanism that does not need it. The epsilon
+# charge is a *policy budget on the number of escalated releases* per account.
+# It is deliberately NOT the composed text-DP bound (n_tokens * epsilon_token),
+# which is computed per release and shown to the user instead. See
+# docs/SECURITY_AND_DP.md, "Prompt escalation accounting".
+EPSILON_ESCALATION = 0.25
+DELTA_ESCALATION = 0.0
+
 
 def clip(delta, norm=CLIP_NORM):
     if not np.isfinite(delta).all() or norm <= 0:

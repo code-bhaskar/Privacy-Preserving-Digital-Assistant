@@ -383,6 +383,114 @@ try {
     .last()
     .click();
   await page.getByRole("button", { name: "Queued locally ✓" }).waitFor();
+
+  // An escalated answer must be visually unmistakable: global robot artwork, a
+  // route badge, and the DP release the user is being told about. The provider
+  // itself is mocked here; backend routing is covered by the pytest suite.
+  await page.route(
+    "**/api/v1/assistant/command",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          intent: "chat",
+          model_intent: "chat",
+          confidence: 0.41,
+          explanation: [],
+          explanation_method: "token occlusion (local intent classifier)",
+          model_version: 1,
+          location: "OpenAI \u00b7 gpt-4o-mini",
+          route: "global",
+          router: {
+            capable: false,
+            capability: "out-of-scope",
+            handler: "global",
+            reason: "Outside local capability: general knowledge.",
+            evidence: "out-of-scope signal",
+            signals: ["general knowledge or live information"],
+            policy:
+              "Outside local capability, so a de-identified copy was released to the global model.",
+            outcome: "escalated",
+          },
+          normalized: {
+            text: "what is the capital of france",
+            corrections: [],
+            rewrites: [],
+            notes: [],
+            changed: false,
+          },
+          privacy: {
+            applied: true,
+            mechanism:
+              "Token-level 10-LDP k-RR over 2824 public words + deterministic PII redaction",
+            epsilon_token: 10,
+            retention_probability: 0.886,
+            vocabulary_size: 2824,
+            protected_tokens: 2,
+            composition_bound: 20,
+            redactions: [],
+            perturbed: [{ from: "france", to: "[redacted]" }],
+            sent_prompt: "what is the capital of [redacted]",
+            epsilon_charged: 0.25,
+            epsilon_spent: 0.25,
+            epsilon_target: 3,
+            notice: "Per-token guarantee only.",
+          },
+          proposal: null,
+          text: "The capital of that country is Paris.",
+          summarization_engine: null,
+          changes: [],
+          check: null,
+        }),
+      }),
+    { times: 1 },
+  );
+  await page
+    .getByRole("textbox", { name: "Message your assistant" })
+    .fill("what is the capital of france");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await page.getByText("The capital of that country is Paris.").waitFor();
+  await expect(page.locator(".message-robot").last()).toHaveAttribute(
+    "src",
+    /global_model_robot_soft_red\.webp$/,
+  );
+  await expect(page.locator(".route-badge-global").last()).toContainText(
+    "Global model",
+  );
+  await expect(page.locator(".assistant-activity .robot-art")).toHaveAttribute(
+    "src",
+    /global_model_robot_soft_red\.webp$/,
+  );
+  await expect(page.locator(".route-flag")).toContainText(
+    "Global model answered",
+  );
+  await page.locator(".privacy-card summary").last().click();
+  await expect(page.locator(".privacy-card").last()).toContainText(
+    "what is the capital of [redacted]",
+  );
+  await expect(page.locator(".privacy-card").last()).toContainText(
+    "france \u2192 [redacted]",
+  );
+  // The next local answer must hand the robot back; the global look is not sticky.
+  await page
+    .getByRole("textbox", { name: "Message your assistant" })
+    .fill("remind me to call Rahul at seven thirty pm");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await page
+    .getByRole("button", { name: "Review & save reminders" })
+    .last()
+    .click();
+  await expect(page.locator(".route-flag")).toContainText(
+    "Local model answered",
+  );
+  await expect(page.getByRole("dialog").locator(".change-list")).toContainText(
+    "Create reminders",
+  );
+  await expect(page.getByRole("dialog").locator(".change-list")).toContainText(
+    "19:30",
+  );
+  await page.keyboard.press("Escape");
   // Assistant CRUD remains side-effect-free until its specific confirmation is clicked.
   async function sendCommand(text) {
     await nav.getByRole("button", { name: "Assistant", exact: true }).click();
@@ -582,7 +690,7 @@ try {
     .waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: real registration/login/logout, encrypted persistent CRUD, consent, local ONNX commands, review-before-save/update/delete, mocked browser push permission/enrollment/revocation with real service-worker registration, summary provenance, learning queue, saved budget settings, audit, themes, contextual robot assets, gated success/error frames, reduced motion and mobile layout.",
+    "PASS: real registration/login/logout, encrypted persistent CRUD, consent, local ONNX commands, local-first routing with global-model artwork and DP release panel, review-before-save/update/delete, mocked browser push permission/enrollment/revocation with real service-worker registration, summary provenance, learning queue, saved budget settings, audit, themes, contextual robot assets, gated success/error frames, reduced motion and mobile layout.",
   );
 } finally {
   if (browser) await browser.close();

@@ -278,7 +278,7 @@
               <section class="welcome">
                 <div class="robot-welcome">
                   <app-robot
-                    [mode]="mode"
+                    [mode]="robotRouteMode"
                     [intent]="robotIntent"
                     [phase]="robotPhase"
                     [reduced]="reduced"
@@ -343,7 +343,7 @@
             } @else {
               <div class="assistant-activity" [attr.data-status]="robotPhase">
                 <app-robot
-                  [mode]="mode"
+                  [mode]="robotRouteMode"
                   [intent]="robotIntent"
                   [phase]="robotPhase"
                   [reduced]="reduced"
@@ -401,7 +401,146 @@
                           ? "YOU"
                           : "PPDA · " + (message.location || "local backend")
                       }}</small>
+                      @if (message.role === "assistant" && message.router) {
+                        <p
+                          class="route-badge"
+                          [class.route-badge-global]="
+                            message.route === 'global'
+                          "
+                        >
+                          <span
+                            class="route-dot"
+                            [class.global]="message.route === 'global'"
+                          ></span>
+                          {{ routeName(message.route) }}
+                          <span class="route-why">{{
+                            message.route === "global"
+                              ? message.router.policy
+                              : message.router.reason
+                          }}</span>
+                        </p>
+                      }
+                      @if (message.normalized?.notes?.length) {
+                        <p class="read-as">
+                          Understood your words as:
+                          @for (note of message.normalized!.notes; track $index) {
+                            <span class="token-chip">{{ note }}</span>
+                          }
+                        </p>
+                      }
                       <p>{{ message.text }}</p>
+                      @if (message.check) {
+                        <div
+                          class="check-card"
+                          [class.check-warn]="!message.check.ok"
+                        >
+                          <strong>{{
+                            message.check.ok
+                              ? "Check: this looks complete"
+                              : "Check: needs your attention"
+                          }}</strong>
+                          <span>{{ message.check.summary }}</span>
+                          @for (
+                            warning of message.check.warnings;
+                            track $index
+                          ) {
+                            <span class="check-warning">⚠ {{ warning }}</span>
+                          }
+                        </div>
+                      }
+                      @if (changedRows(message).length) {
+                        <details class="change-list" open>
+                          <summary
+                            >These are the changes
+                            {{ message.proposal ? "proposed" : "applied" }}</summary
+                          >
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Field</th>
+                                <th>Before</th>
+                                <th>After</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              @for (
+                                change of changedRows(message);
+                                track $index
+                              ) {
+                                <tr>
+                                  <td>{{ change.field }}</td>
+                                  <td class="before">{{
+                                    change.before === null ||
+                                    change.before === undefined
+                                      ? "—"
+                                      : change.before
+                                  }}</td>
+                                  <td class="after">{{
+                                    change.after === null ||
+                                    change.after === undefined
+                                      ? "—"
+                                      : change.after
+                                  }}</td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                          <p class="muted">
+                            Nothing is written until you confirm the review
+                            below.
+                          </p>
+                        </details>
+                      }
+                      @if (message.privacy) {
+                        <details class="privacy-card">
+                          <summary
+                            >Differential privacy applied before sending · ε
+                            {{ message.privacy.epsilon_charged }} charged ({{
+                              message.privacy.epsilon_spent.toFixed(2)
+                            }}
+                            of {{ message.privacy.epsilon_target }} used)</summary
+                          >
+                          <p class="muted">{{ message.privacy.mechanism }}</p>
+                          <p>
+                            <strong>Prompt actually sent:</strong>
+                            <code>{{ message.privacy.sent_prompt }}</code>
+                          </p>
+                          <p class="muted">
+                            {{ message.privacy.protected_tokens }} protected
+                            tokens ·
+                            {{
+                              (message.privacy.retention_probability * 100)
+                                .toFixed(0)
+                            }}% kept at ε<sub>token</sub>
+                            {{ message.privacy.epsilon_token }} · composition
+                            bound {{ message.privacy.composition_bound }}
+                          </p>
+                          @if (message.privacy.perturbed.length) {
+                            <p>
+                              @for (
+                                word of message.privacy.perturbed;
+                                track $index
+                              ) {
+                                <span class="token-chip"
+                                  >{{ word.from }} → {{ word.to }}</span
+                                >
+                              }
+                            </p>
+                          }
+                          @if (message.privacy.redactions.length) {
+                            <p class="muted">
+                              Redacted before perturbation:
+                              @for (
+                                redaction of message.privacy.redactions;
+                                track $index
+                              ) {
+                                {{ redaction.type }} ({{ redaction.count }})
+                              }
+                            </p>
+                          }
+                          <p class="muted">{{ message.privacy.notice }}</p>
+                        </details>
+                      }
                       @if (message.proposal) {
                         <button class="outline" (click)="review(message)">
                           {{
@@ -483,11 +622,22 @@
                 ></textarea>
                 <div class="composer-bottom">
                   <span
+                    class="route-flag"
+                    [class.route-global]="activeRoute === 'global'"
                     ><app-icon
-                      [name]="mode === 'Privacy' ? 'shield' : 'spark'"
+                      [name]="
+                        activeRoute === 'global'
+                          ? 'spark'
+                          : mode === 'Privacy'
+                            ? 'shield'
+                            : 'assistant'
+                      "
                     />
-                    {{ mode }} mode <span class="small-separator">·</span> Local
-                    model v{{ learning?.model_version || 1 }}</span
+                    {{ routeName(activeRoute) }} answered
+                    <span class="small-separator">·</span> {{ mode }} mode
+                    <span class="small-separator">·</span> intent model v{{
+                      learning?.model_version || 1
+                    }}</span
                   ><button
                     class="send"
                     (click)="send()"
@@ -500,9 +650,11 @@
               </div>
               <div class="composer-caption">
                 <app-icon name="shield" /><span>{{
-                  mode === "Global"
-                    ? "Global mode sends your prompt to OpenAI with consent. No workspace history is attached."
-                    : "Privacy mode never calls a cloud provider. Default may use cloud for opted-in general chat."
+                  activeRoute === "global"
+                    ? "Last answer came from the global model: a de-identified, token-level DP release was sent, never your raw prompt or workspace history."
+                    : mode === "Privacy"
+                      ? "Privacy mode never calls a cloud provider, so out-of-scope requests stay on this device."
+                      : "Every request is read and classified locally first. Only work the local stack cannot do may be escalated to the global model with differential privacy applied."
                 }}</span
                 ><span class="enter-hint">↵ to send</span>
               </div>
@@ -1080,6 +1232,47 @@
             />
             Completed</label
           >
+        }
+        @if (reviewChanges.length) {
+          <details class="change-list" open>
+            <summary>Review these changes</summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (change of reviewChanges; track $index) {
+                  <tr>
+                    <td>{{ change.field }}</td>
+                    <td class="before">{{
+                      change.before === null || change.before === undefined
+                        ? "—"
+                        : change.before
+                    }}</td>
+                    <td class="after">{{
+                      change.after === null || change.after === undefined
+                        ? "—"
+                        : change.after
+                    }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </details>
+        }
+        @for (note of reviewNotes; track $index) {
+          <p class="read-as"><span class="token-chip">{{ note }}</span></p>
+        }
+        @if (reviewCheck && reviewCheck.warnings.length) {
+          <p class="error">
+            @for (warning of reviewCheck.warnings; track $index) {
+              ⚠ {{ warning }}<br />
+            }
+          </p>
         }
         @if (modalError) {
           <p class="error" role="alert">{{ modalError }}</p>

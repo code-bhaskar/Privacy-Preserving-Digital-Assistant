@@ -9,6 +9,9 @@ A login-first Angular workspace with a real FastAPI backend, encrypted calendar/
 - Backend ownership checks and category-specific processing consent.
 - AES-256-GCM encrypted workspace text and queued training examples, with per-user derived keys, fresh nonces and AAD.
 - Persistent CRUD, real local ONNX Runtime classification, token-occlusion explanations, local neural summaries (FLAN-T5-small default; optional model installation required), and reviewed assistant create/update/delete proposals.
+- **Local-first routing**: every message is normalised offline (tolerant spelling, spoken numbers), classified by the local ONNX intent model, and checked against what this deployment can actually do. Work the local stack handles never leaves the host.
+- **Differentially private escalation**: a request outside local capability is de-identified and token-level DP perturbed by `fl/text_dp.py`, charged to the account's lifetime privacy ledger, and only then sent to the global model. The perturbed prompt, the changed words and the ε charge are shown in the reply.
+- **Reviewable change reports**: each understood request returns a field-by-field change list plus a correctness check ("no time was found", "the parsed time is in the past"), and nothing is written until the review is confirmed.
 - Optional OpenAI adapter (Global mode) and loopback Ollama adapter (local conversation). No cloud keys are shipped or exposed to the browser.
 - Opt-in scheduled browser Web Push for calendar events and reminders: one-second due checks, encrypted subscriptions, durable retries and cancellation. Delivery is best effort, not an exact-time alarm.
 - A separately trained, bundled seven-label SNIPS ONNX benchmark: 97.86% validation accuracy on 700 examples; public central training, not a private FL/DP result.
@@ -71,11 +74,23 @@ For an HTTPS sandbox/reverse-proxy preview, keep `COOKIE_SECURE=true` and bind t
 
 See [push setup, assistant commands and model provenance](docs/NOTIFICATIONS_AND_COMMANDS.md) for setup, cancellation/delivery limits and SNIPS reproduction.
 
+### How a request is routed
+
+1. **Read tolerantly, offline.** `app/normalizer.py` fixes recognised domain misspellings (`remindar` → reminder, `calender` → calendar, `tomorow` → tomorrow) and rewrites spoken numbers in time and duration phrases (`at seven thirty pm` → `at 7:30 pm`, `half past eight` → `8:30`, `in twenty minutes` → `in 20 minutes`). Proper nouns are never guessed at, and every rewrite is reported back so you can see what was understood.
+2. **Classify locally.** The active shared ONNX intent model labels the request and produces token-occlusion evidence. It never executes a tool.
+3. **Decide capability.** `app/capability.py` asks whether this deployment can do the work: calendar/reminder/note create-update-delete-list, the configured local summariser, deterministic greetings, or general chat when a loopback Ollama runtime is configured. Deterministic evidence outranks the classifier, because the bundled 128-feature model confidently labels out-of-domain questions as tasks (measured: "what is the capital of France" → calendar 0.68).
+4. **Escalate only when it cannot, and only privately.** If the work is out of scope, `fl/text_dp.py` first redacts e-mail addresses, URLs, phone-like numbers and credentials, replaces words outside the committed public vocabulary with `[redacted]`, then applies k-ary randomised response to the remaining content words. Only that release is transmitted — never the raw prompt, prior conversation or workspace records. The reply shows the exact prompt sent, which words changed, and the ε charged.
+5. **Show the changes for checking.** Understood tasks return a change list (Action / Title / When, or before → after for edits) and a correctness check with warnings. Confirming the review is what writes the record; the confirmation message then restates what was stored.
+
+Escalation is refused, and the request stays local, in Privacy mode, when cloud consent is off, when no provider is configured, when the sensitive-content guard matches, or when the privacy budget cannot cover another release. Explicit Global mode reports those conditions as errors instead of answering locally.
+
+**The escalation guarantee is per token, not per document.** A prompt with *n* protected tokens has an *n × ε_token* composition bound, which the API returns as `composition_bound` and the UI displays. Most of the practical protection comes from redaction, not from the noise. Do not describe an escalated prompt as private or anonymous.
+
 ### Global and Default modes
 
 Set `OPENAI_API_KEY` securely in the backend environment and optionally change `OPENAI_MODEL`, then restart the backend. Global mode requires saved cloud consent. Only the current prompt is sent; workspace records and prior conversation are not attached. Provider failures are reported, not replaced with fabricated answers.
 
-Default handles task requests locally. Opted-in general chat may use OpenAI if configured; a conservative sensitive-keyword guard keeps recognised sensitive prompts local, **but it is not a universal privacy classifier**. Use Privacy mode for an absolute no-cloud-LLM routing rule. Separately enabled browser push still uses its browser vendor’s notification service. Explicit Global mode can transmit sensitive text, so use it deliberately.
+Default handles task requests locally. General chat the local stack cannot answer may be escalated to OpenAI if configured, always through the DP layer above; a conservative sensitive-keyword guard keeps recognised sensitive prompts local, **but it is not a universal privacy classifier**. Use Privacy mode for an absolute no-cloud-LLM routing rule. Separately enabled browser push still uses its browser vendor’s notification service. Explicit Global mode sends the prompt directly to the provider — still de-identified and perturbed, but it can carry sensitive content the keyword guard did not catch, so use it deliberately.
 
 For broader local conversation, run Ollama yourself and configure `OLLAMA_URL=http://127.0.0.1:11434` and `OLLAMA_MODEL` to an installed model. No LLM weights are downloaded by the app. Without Ollama, local mode supports the task classifier, configured local summaries and limited deterministic greetings—not general conversation. FLAN-T5-small is the default summariser; T5-small and DistilBART-CNN are selectable. Missing model assets produce an explicit setup error, not cloud or extractive fallback.
 
@@ -97,6 +112,7 @@ This updates the shared **assistant intent model**, not a third-party conversati
 
 ```bash
 .venv/bin/python -m pytest -q
+.venv/bin/python scripts/build_public_vocabulary.py --check   # DP vocabulary is the committed one
 cd frontend
 npm run build
 npm run test:smoke
@@ -104,7 +120,7 @@ npm run test:push
 npm run test:assets
 ```
 
-Additional tests cover reviewed assistant CRUD, ambiguous/foreign targets, stale-edit and timezone safeguards, due-time dispatch, retry/recovery, cancellation and encrypted push subscriptions. The browser smoke exercises service-worker registration plus mocked permission/subscription APIs, not actual vendor-to-device delivery. SNIPS training/export is tested with an offline fixture; its actual public-data report is bundled in `models/snips/metrics.json`.
+Additional tests cover local-first routing (supported tasks never escalate), DP escalation release and ledger accounting, budget exhaustion, Privacy/consent/sensitive refusals, spoken-number and misspelling handling, change-list correctness, reviewed assistant CRUD, ambiguous/foreign targets, stale-edit and timezone safeguards, due-time dispatch, retry/recovery, cancellation and encrypted push subscriptions. The browser smoke exercises service-worker registration plus mocked permission/subscription APIs, not actual vendor-to-device delivery. SNIPS training/export is tested with an offline fixture; its actual public-data report is bundled in `models/snips/metrics.json`.
 
 Backend tests cover auth, cookie/CSRF/origin enforcement, password policy, IDOR checks, ciphertext/AAD, append-only audit and privacy ledger, ONNX serving, local/cloud boundaries, clipping/noise, pairwise cancellation, real three-process training, dropout abort and persistent accounting.
 
@@ -112,8 +128,8 @@ The Linux browser smoke test launches its **own isolated database, secrets, back
 
 ## Repository map
 
-- `app/`: FastAPI APIs, crypto, schemas, storage, ONNX/local inference, consent.
-- `fl/`: client workers, Gaussian mechanism, masking protocol and integrated supervisor.
+- `app/`: FastAPI APIs, crypto, schemas, storage, ONNX/local inference, consent, `normalizer.py` (tolerant reading) and `capability.py` (local-first routing).
+- `fl/`: client workers, Gaussian mechanism, masking protocol, integrated supervisor, `text_dp.py` (escalation prompt DP) and the committed `public_vocabulary.txt`.
 - `migrations/`: Alembic schema plus append-only triggers.
 - `frontend/`: Angular workspace and browser smoke test.
 - `tests/`: isolated backend/security/protocol tests.

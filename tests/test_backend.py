@@ -245,13 +245,33 @@ def test_cloud_consent_configuration_and_no_history(client, signup, monkeypatch)
         seen.append(text)
         return "Actual adapter response in mocked provider test"
 
+    # What reaches the provider must be the DP release, never the raw prompt and
+    # never any earlier conversation or workspace record.
+    release = {
+        "text": "only perturbed prompt",
+        "mechanism": "Token-level 10-LDP k-RR over 100 public words + redaction",
+        "epsilon_token": 10.0,
+        "retention_probability": 0.9,
+        "vocabulary_size": 100,
+        "protected_tokens": 2,
+        "composed_epsilon": 20.0,
+        "redactions": [],
+        "perturbed": [{"from": "selected", "to": "[redacted]"}],
+    }
+    # The policy checks provider configuration before releasing anything, so a
+    # dummy key is needed even though the transport itself is mocked.
+    monkeypatch.setattr("app.main.settings.openai_api_key", "not-a-real-key")
     monkeypatch.setattr("app.main.cloud_answer", provider)
+    monkeypatch.setattr("app.main.text_dp.perturb", lambda text, epsilon: release)
     r = client.post(
         P + "/assistant/command",
         json={"text": "only selected prompt", "mode": "Global"},
     )
-    assert r.status_code == 200 and seen == ["only selected prompt"]
-    assert "OpenAI" in r.json()["location"]
+    assert r.status_code == 200 and seen == ["only perturbed prompt"]
+    body = r.json()
+    assert "OpenAI" in body["location"] and body["route"] == "global"
+    assert body["privacy"]["sent_prompt"] == "only perturbed prompt"
+    assert body["privacy"]["epsilon_charged"] == 0.25
 
 
 def test_settings_validation_and_profile(client, signup):

@@ -22,6 +22,9 @@ The checkout initially contained only a README and mascot. This implementation n
 - Owner-scoped calendar/reminder/note CRUD with AES-256-GCM encrypted text, per-user key derivation, purpose AAD and fresh nonces.
 - Category-specific consent, persisted settings and audit verification.
 - Local ONNX Runtime softmax intent classification, token occlusion, configured local neural summarisation (FLAN-T5-small by default, operator-installed weights) and reviewed create/update/delete task drafts.
+- Local-first routing: offline tolerant reading (misspellings, spoken numbers), local intent classification, and an explicit capability decision before anything can leave the host.
+- Differentially private escalation for out-of-capability requests: deterministic PII redaction plus token-level k-RR over a committed public vocabulary, charged to the lifetime privacy ledger, with the transmitted prompt and its ε shown to the user.
+- Field-by-field change lists with a correctness check for every understood task, so the review dialog answers "is this what you meant?" rather than only showing raw fields.
 - Optional consent-controlled OpenAI adapter and loopback Ollama adapter. Provider keys/local LLM weights are not shipped; no paid provider call was performed during testing.
 - Scheduled opt-in browser Web Push for events/reminders, with encrypted subscriptions, durable retry/cancellation and generic lock-screen content; best-effort delivery, not an exact alarm.
 - Separate bundled SNIPS public intent benchmark: 97.86% validation accuracy on 700 examples, central training with no FL/DP accuracy claim.

@@ -53,3 +53,18 @@ export function robotForBackendIntent(intent?: string): RobotIntent {
 export function modeRobot(mode: string): string {
   return MODE_ROBOTS[mode] || MODE_ROBOTS["Default"];
 }
+/**
+ * The robot shows where the answer actually came from, not only the mode the
+ * user selected: a request the local stack handled keeps the local robot, while
+ * a request released to the global model switches to the soft-red global robot.
+ */
+export type RobotRoute = "local" | "global";
+export function routeRobot(route: string | undefined, mode: string): string {
+  return route === "global" ? MODE_ROBOTS["Global"] : modeRobot(mode);
+}
+export function routeMode(route: string | undefined, mode: string): string {
+  return route === "global" ? "Global" : mode;
+}
+export function routeName(route: string | undefined): string {
+  return route === "global" ? "Global model" : "Local model";
+}

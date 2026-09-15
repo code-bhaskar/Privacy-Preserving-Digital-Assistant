@@ -1703,3 +1703,119 @@ button:disabled {
     overflow: auto;
   }
 }
+
+/* --- Local-first routing: which model answered, and what it will change --- */
+.route-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.route-flag.route-global {
+  color: #b0603f;
+}
+.route-badge {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 6px;
+  padding: 6px 9px;
+  border-left: 3px solid #4f8f6f;
+  border-radius: 6px;
+  background: var(--mint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.route-badge-global {
+  border-left-color: #b0603f;
+  background: #f7eae3;
+}
+.route-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4f8f6f;
+  flex-shrink: 0;
+}
+.route-dot.global {
+  background: #b0603f;
+}
+.route-why {
+  font-weight: 400;
+  color: var(--muted);
+}
+.read-as {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.check-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0;
+  padding: 9px 11px;
+  border: 1px solid #bcd9c9;
+  border-radius: 8px;
+  background: var(--mint);
+  font-size: 12px;
+}
+.check-card.check-warn {
+  border-color: #e0c9a8;
+  background: #fbf3e6;
+}
+.check-warning {
+  color: #8a6528;
+}
+.change-list,
+.privacy-card {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.change-list summary,
+.privacy-card summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.change-list table {
+  width: 100%;
+  margin-top: 7px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.change-list th,
+.change-list td {
+  padding: 5px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.change-list th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.change-list td.before {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.change-list td.after {
+  font-weight: 600;
+}
+.privacy-card code {
+  display: block;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--sidebar);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
