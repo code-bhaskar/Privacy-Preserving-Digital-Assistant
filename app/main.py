@@ -47,7 +47,7 @@ from .security import (
 from .preferences import DEFAULTS, prefs, expenditure, affordable
 from .local_model import classify
 from . import summarization
-from . import notifications, assistant_actions, snips, normalizer, capability
+from . import notifications, assistant_actions, snips, normalizer, capability, llm_intent
 from fl import pipeline, text_dp
 from fl.privacy import (
     EPSILON_PER_ROUND,
@@ -971,6 +971,9 @@ async def command(body: Command, user=Depends(current_user)):
     with engine.connect() as conn:
         version, weights = pipeline.active_model(conn)
     label, confidence, explanation = classify(weights, text)
+    # 2b. An optional loopback LLM reads the same text. It is strictly additive:
+    # any failure leaves `llm` as None and the softmax label stands.
+    llm = await llm_intent.classify(text)
     # ML never executes tools. Explicit workspace mutations take precedence over words in titles.
     kind = assistant_actions.infer_kind(text)
     op = assistant_actions.operation(text)
@@ -1005,11 +1008,14 @@ async def command(body: Command, user=Depends(current_user)):
         summary_ready=summarization.status()["ready"],
         local_llm=bool(settings.ollama_url and settings.ollama_model),
         task=deterministic,
+        llm_label=(llm or {}).get("label"),
     )
     result = {
         "intent": intent,
         "model_intent": label,
         "confidence": confidence,
+        "llm_intent": (llm or {}).get("label"),
+        "intent_classifier": llm_intent.engine_label(),
         "explanation": explanation,
         "explanation_method": "token occlusion (local intent classifier)",
         "model_version": version,
@@ -1322,6 +1328,7 @@ def audit_verify(user=Depends(current_user)):
 def runtime(user=Depends(current_user)):
     return {
         "local_model": "ONNX Runtime · 128-feature softmax intent model",
+        "intent_classifier": llm_intent.engine_label(),
         "local_llm": bool(settings.ollama_url and settings.ollama_model),
         "summarization_engine": summarization.engine_label(),
         "local_summary": summarization.status(),

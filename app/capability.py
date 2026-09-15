@@ -96,16 +96,44 @@ def local_task(text):
     return None
 
 
+# An LLM reading the user's own text can be steered by that text, so an
+# instruction-override attempt disqualifies the LLM label and falls back to the
+# deterministic and ONNX evidence. This is a screen, not a proof.
+INJECTION = re.compile(
+    r"\b(?:ignore|disregard|forget|override|bypass)\s+(?:all\s+|any\s+|the\s+|your\s+)?"
+    r"(?:previous|prior|above|earlier|system)\s*(?:instructions?|rules?|prompts?|messages?)?"
+    r"|\bsystem\s+prompt\b|\byou\s+are\s+now\b|\bnew\s+instructions?\b"
+    r"|\bact\s+as\s+(?:a|an|if)\b|\bpretend\s+(?:to\s+be|you\s+are)\b"
+    r"|\b(?:classify|label|route)\s+this\s+as\b",
+    re.I,
+)
+
+
 def assess(
-    text, model_label, confidence, *, summary_ready=True, local_llm=False, task=None
+    text,
+    model_label,
+    confidence,
+    *,
+    summary_ready=True,
+    local_llm=False,
+    task=None,
+    llm_label=None,
 ):
     """Return the routing decision for one request. No I/O, no side effects.
 
     `task` lets the caller pass deterministic evidence it already resolved, such
     as a workspace kind recovered from a record ID ("Rename #12 to ..."), which
     no keyword in the sentence reveals.
+
+    `llm_label` is the local LLM's reading, when a runtime is configured. It
+    outranks the bundled softmax, which was measured guessing confidently on
+    out-of-domain text, but it never outranks deterministic task evidence and it
+    is discarded entirely if the text looks like an instruction-override attempt.
     """
     task = task or local_task(text)
+    injection = bool(INJECTION.search(text))
+    if llm_label and injection:
+        llm_label = None
     if task:
         return Route(
             capable=True,
@@ -130,6 +158,38 @@ def assess(
             capability="local.greeting",
             reason="Greeting or capability question answered locally.",
             evidence="deterministic greeting pattern",
+            signals=[],
+        )
+    if llm_label == "out_of_scope":
+        return Route(
+            capable=False,
+            handler="global",
+            capability="out-of-scope",
+            reason=(
+                "The local LLM read this as outside the supported tasks. The "
+                "local stack handles calendar, reminders, notes and local "
+                "summaries."
+            ),
+            evidence="local LLM classification",
+            signals=["local LLM: out_of_scope"],
+        )
+    if llm_label in TASK_LABELS:
+        return Route(
+            capable=True,
+            handler=llm_label,
+            capability=f"local.{llm_label}",
+            reason=(
+                f"The local LLM classified this as “{llm_label}”; handled on "
+                "this device."
+            ),
+            evidence=(
+                "local LLM classification"
+                + (
+                    ""
+                    if model_label == llm_label
+                    else f" (softmax said “{model_label}” at {confidence:.2f})"
+                )
+            ),
             signals=[],
         )
     signals = _signals(text)
@@ -162,8 +222,15 @@ def assess(
             capable=True,
             handler="chat",
             capability="local.llm",
-            reason="A loopback local LLM is configured, so general chat stays on-device.",
-            evidence="configured local LLM runtime",
+            reason=(
+                "The local LLM read this as conversation, and a loopback runtime "
+                "is configured, so it stays on-device."
+                if llm_label == "chat"
+                else "A loopback local LLM is configured, so general chat stays on-device."
+            ),
+            evidence=(
+                "local LLM classification" if llm_label == "chat" else "configured local LLM runtime"
+            ),
             signals=[],
         )
     return Route(
