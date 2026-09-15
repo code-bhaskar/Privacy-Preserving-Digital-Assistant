@@ -750,7 +750,13 @@ class App {
             ? "Reminder saved"
             : "Note saved",
       );
-      this.notify("Saved with AES-256-GCM encryption.");
+      // Saving lands on the workspace tab, so restate the change there too.
+      this.notify(
+        "Change applied: " +
+          this.describeChange(kind, edited ? "updated" : "created", title, detail)
+            .sentence +
+          " · AES-256-GCM encrypted.",
+      );
       await this.loadItems();
       await this.poll();
     } catch (e) {
@@ -765,10 +771,18 @@ class App {
       this.cdr.markForCheck();
     }
   }
-  /** State plainly what was written, so the user can check it afterwards. */
-  confirmSaved(kind: string, verb: "created" | "updated" | "deleted", title: string, detail: string) {
+  private describeChange(
+    kind: string,
+    verb: "created" | "updated" | "deleted",
+    title: string,
+    detail: string,
+  ) {
     const noun =
-      kind === "Calendar" ? "calendar event" : kind === "Reminders" ? "reminder" : "note";
+      kind === "Calendar"
+        ? "calendar event"
+        : kind === "Reminders"
+          ? "reminder"
+          : "note";
     const when =
       kind !== "Notes" && /^\d{4}-\d{2}-\d{2}T/.test(detail)
         ? new Date(detail).toLocaleString(undefined, {
@@ -779,13 +793,28 @@ class App {
             minute: "2-digit",
           })
         : "";
+    return {
+      noun,
+      when,
+      sentence:
+        `${verb} ${noun} “${title}”` + (when ? ` for ${when}` : ""),
+    };
+  }
+  /** State plainly what was written, so the user can check it afterwards. */
+  confirmSaved(
+    kind: string,
+    verb: "created" | "updated" | "deleted",
+    title: string,
+    detail: string,
+  ) {
+    const { noun, when, sentence } = this.describeChange(kind, verb, title, detail);
     this.messages.push({
       role: "assistant",
       route: "local",
       location: "local backend",
       text:
-        `Change applied: ${verb} ${noun} “${title}”` +
-        (when ? ` for ${when} (${this.timezone}).` : ".") +
+        `Change applied: ${sentence}` +
+        (when ? ` (${this.timezone}).` : ".") +
         " Stored encrypted on this backend.",
       changes: [
         { field: "Action", before: null, after: `${verb} ${noun}` },
